@@ -34,7 +34,7 @@
 ## 📊 ภาพรวมสถานะการพัฒนา (High-Level Progress Tracker)
 
 - [x] **Phase 1: Foundation & Infrastructure** (เสร็จสมบูรณ์ - ทดสอบผ่าน 12/12 tests)
-- [ ] **Phase 2: Core Trading Logic (MVP) & Backtesting**
+- [x] **Phase 2: Core Trading Logic (MVP) & Backtesting** (เสร็จสมบูรณ์ - ทดสอบผ่าน 27/27 tests + รัน Backtest สำเร็จ)
 - [ ] **Phase 3: AI Sentiment Integration (Gatekeeper)**
 - [ ] **Phase 4: Fail-safe, Recovery & Risk Hardening**
 - [ ] **Phase 5: Paper Trading & VPS Deployment**
@@ -61,20 +61,21 @@
 - [x] พัฒนาชุดทดสอบ Unit Tests 12 รายการ (`tests/`) ผ่าน 100% พร้อมสคริปต์ตรวจสอบ `scripts/verify_phase1.py`
 
 ### Phase 2: Core Trading Logic (MVP) & Backtesting
-- [ ] พัฒนา Technical Analysis Module (EMA, RSI, ATR, Support/Resistance)
-- [ ] พัฒนา Indicator Warmup Logic (ดึงอย่างน้อย 100 bars ก่อนออก Signal)
-- [ ] พัฒนา Strategy Engine (Timeframe: 1H/4H เป็นหลัก, 1D ยืนยัน)
-- [ ] พัฒนา Risk Engine:
-  - [ ] Hard-coded Max Daily Loss
-  - [ ] Max Positions & Duplicate Check
-  - [ ] **PDT Counter** (จำกัด Day Trade ไม่เกิน 3 ครั้งใน 5 วัน)
-  - [ ] **Gap Risk Assessment** (คำนวณจาก ATR)
-- [ ] พัฒนา Position Sizing (ตาม Risk + ATR Gap Factor + Fractional Shares)
-- [ ] พัฒนา Order Execution Engine:
-  - [ ] **บังคับ Bracket Order (TP + SL) ทุกไม้**
-  - [ ] Async Order Status Monitoring & Partial Fill handling
-- [ ] พัฒนา State Management & Reconciliation (ซิงค์สถานะ DB กับ Alpaca)
-- [ ] พัฒนา Backtesting Framework (จำลอง Slippage, Gap Risk, และสรุป Performance Metrics)
+- [x] พัฒนา Technical Analysis Module (EMA 20/50/200, RSI 14, ATR 14, Support/Resistance ใน `core/technical.py`)
+- [x] พัฒนา Indicator Warmup Logic (ดึงและตรวจรับประกันอย่างน้อย 100 bars ก่อนออก Signal)
+- [x] พัฒนา Strategy Engine (Swing Trend-Pullback 1H/4H ยืนยันด้วย Daily 1D ใน `core/strategy.py`)
+- [x] พัฒนา Risk Engine (`core/risk_engine.py`):
+  - [x] Hard-coded Max Daily Loss ($14 บนพอร์ต $700) พร้อม Trigger Kill Switch
+  - [x] Max Concurrent Positions (3) & Duplicate Order Prevention
+  - [x] **PDT Counter** (จำกัด Day Trade ไม่เกิน 3 ครั้งใน 5 วันทำการ สำหรับพอร์ต < $25,000)
+  - [x] **Gap Risk Assessment** (คำนวณจาก ATR ปรับลดขนาดไม้ลงเมื่อ Gap Risk สูง)
+- [x] พัฒนา Position Sizing (`core/position_sizing.py` ตาม Risk Capital + Tranche ~$20 + Fractional Shares)
+- [x] พัฒนา Order Execution Engine (`core/order_execution.py`):
+  - [x] **บังคับ Bracket Order (Entry + TP + SL) ทุกไม้** (Time-In-Force GTC)
+  - [x] Async Order Status Monitoring, Partial Fill handling, และ Slippage calculation
+- [x] พัฒนา State Management & Reconciliation (`core/state_manager.py` ซิงค์สถานะ DB กับ Alpaca Broker แบบ Stateless)
+- [x] พัฒนา Backtesting Framework (`backtest/engine.py` & `backtest/reports.py` จำลอง Slippage, Overnight Gap Risk, และสรุปผลงาน)
+- [x] พัฒนา Unit Tests ครบ 27 รายการ (15 รายการใหม่ใน Phase 2) ผ่าน 100% พร้อมสคริปต์ `scripts/run_backtest.py`
 
 ### Phase 3: AI Sentiment Integration
 - [ ] พัฒนา News Fetcher Module (ดึงข่าวหุ้นผ่าน News API แบบ async)
@@ -110,7 +111,50 @@
 
 > *รูปแบบการบันทึก: ให้เพิ่มรายการใหม่ไว้ด้านบนสุดของส่วนนี้เสมอ*
 
-### [2026-09-22] พัฒนา Phase 1: Foundation & Infrastructure เสร็จสมบูรณ์
+### [2026-09-22] พัฒนา Phase 2: Core Trading Logic (MVP) & Backtesting เสร็จสมบูรณ์
+* **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
+* **สิ่งที่ทำไปแล้ว:**
+  1. **Technical Analysis Engine (`core/technical.py`):**
+     - พัฒนาการคำนวณ EMA (20, 50, 200), RSI 14 (Wilder's smoothing), ATR 14 (True Range) และ Support/Resistance (Swing High/Low)
+     - สร้างกลไก **Indicator Warmup Invariant (`is_warmed_up`)** ตรวจสอบว่าต้องมีข้อมูลย้อนหลังอย่างน้อย 100 bars ก่อนอนุญาตให้สร้างสัญญาณ
+  2. **Swing Strategy Engine (`core/strategy.py`):**
+     - กลยุทธ์ Multi-Timeframe Swing Trend-Pullback:
+       - Higher Timeframe (1D): ยืนยันแนวโน้มขาขึ้น (Close > EMA 50)
+       - Lower Timeframe (1H/4H): หาจังหวะย่อตัวเข้าใกล้ EMA 20 พร้อม RSI ฟื้นตัว
+     - คำนวณ Take Profit (+3.0x ATR) และ Stop Loss (-2.0x ATR) บังคับ Risk:Reward >= 1.5
+     - ส่งออกข้อมูลเป็นโครงสร้าง `TradingSignal` ที่มีราคา TP/SL ชัดเจน
+  3. **Risk Management Engine (`core/risk_engine.py`):**
+     - ด่านตรวจความปลอดภัยก่อนส่งคำสั่ง:
+       - **Hard-coded Max Daily Loss:** ป้องกันขาดทุนเกิน $14 ต่อวัน (2% ของ $700) พร้อม Activate Kill Switch
+       - **PDT Rule Counter:** บล็อกการปิดคำสั่งในวันเดียวกัน (Day Trade) หากทำครบ 3 ครั้งในรอบ 5 วันทำการ (สำหรับพอร์ต < $25,000)
+       - **Max Positions:** จำกัดไม่เกิน 3 positions พร้อมกัน และป้องกัน Duplicate Orders
+       - **Overnight Gap Risk:** วิเคราะห์ความผันผวนจาก ATR หากเสี่ยงต่อการเกิด Gap กระโดดข้าม SL จะปรับลดขนาดไม้ลง 25% - 50%
+  4. **Position Sizing Calculator (`core/position_sizing.py`):**
+     - คำนวณจำนวนหุ้นตาม Risk Capital (2% ของ Equity) และ Tranche Budget (~$20/ไม้)
+     - รองรับ Fractional Shares ละเอียด 4 ตำแหน่งทศนิยม
+  5. **Order Execution Engine (`core/order_execution.py`):**
+     - **บังคับคำสั่งซื้อทุกไม้ต้องเป็น Bracket Order (Entry + Attached Take Profit + Attached Stop Loss)** ด้วย Time-In-Force `GTC`
+     - มีระบบ Async Polling ติดตามผลคำสั่งจนกว่าจะ Filled / Canceled
+     - คำนวณ Slippage เปรียบเทียบราคาที่ส่งกับราคาที่ Fill จริง และแจ้งเตือนผ่าน Telegram
+  6. **Stateless State Management (`core/state_manager.py`):**
+     - ออกแบบการทำงานแบบ Stateless: อ่านสถานะจริงจาก Alpaca มา Reconcile กับ Database PostgreSQL ทันทีที่ระบบเริ่มทำงาน
+     - ตรวจจับ Position Mismatch และบันทึก Snapshot ลงตาราง `portfolio_state`
+  7. **Backtesting Framework (`backtest/engine.py` & `backtest/reports.py`):**
+     - พัฒนา Engine จำลองการเทรดแบบ Bar-by-bar
+     - **จำลอง Slippage เสมือนจริง (0.1%)**
+     - **จำลอง Overnight Gap Risk** (กรณีราคาเปิดวันถัดไปกระโดดข้าม Stop Loss จะบังคับ Exit ที่ราคาเปิดจริงทันที)
+     - สรุปผล Performance: Total Net P/L, Win Rate, Profit Factor, Max Drawdown, Average Trade P/L
+  8. **Testing & Verification:**
+     - เขียน Unit Tests เพิ่มอีก 15 รายการ รวมเป็น **27/27 รายการผ่าน 100%**
+     - รันสคริปต์ `scripts/run_backtest.py --symbol NVDA` จำลอง 400 bars ได้ผล Win Rate 66.7% และ Profit Factor 2.50
+* **สถานะปัจจุบัน:** Phase 2 เสร็จสมบูรณ์ 100% พร้อมเข้าสู่ Phase 3 (AI Sentiment Integration via OpenRouter)
+* **ปัญหา/สิ่งที่พบ:**
+  - การจำลอง Gap Risk ใน Backtester พิสูจน์ให้เห็นว่าการถือหุ้นข้ามคืน (Swing Trading) มีโอกาสที่ราคาเปิดจะกระโดดข้าม SL ได้จริง การคำนวณ Position Sizing โดยเผื่อ Factor จาก ATR จึงเป็นสิ่งจำเป็นอย่างยิ่ง
+* **สิ่งที่ต้องทำในรอบถัดไป (Phase 3):**
+  1. พัฒนา News Fetcher Module ดึงข่าวหุ้นเป้าหมาย (NVDA, TSM) ผ่าน News API แบบ async
+  2. พัฒนา AI Sentiment Module เชื่อมต่อ OpenRouter API (gpt-4o-mini) ส่งออก Structured JSON
+  3. พัฒนา Pre-Market Gap Scan สำหรับวิเคราะห์ข่าวเช้าก่อนตลาดเปิด เพื่อเตือนความเสี่ยงของ Position ที่ถืออยู่
+  4. รวม AI เข้าใน Trading Pipeline เพื่อทำหน้าที่เป็น **Gatekeeper/Filter** สกัด Signal ปลอม
 * **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
 * **สิ่งที่ทำไปแล้ว:**
   1. **Project & Git Initialization:**
