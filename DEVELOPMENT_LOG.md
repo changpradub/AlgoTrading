@@ -142,10 +142,10 @@
        - เรียก Gemini 3.8 Flash วิเคราะห์สดผ่าน OpenRouter ได้ Sentiment = POSITIVE (Confidence 85.0%), Risk Event = False, Gatekeeper = PASS
        - ทดสอบ Gatekeeper อนุมัติสัญญาณซื้อจำลองสมบูรณ์แบบ
      - ทดสอบรัน Pre-Market Scan แบบสดผ่าน Telegram
-* **สถานะปัจจุบัน:** Phase 3 เสร็จสมบูรณ์ 100% พร้อมเข้าสู่ Phase 4 (Fail-safe, Recovery & Risk Hardening)
 * **ปัญหา/สิ่งที่พบ:**
   - อ็อบเจกต์ News ของ Alpaca ส่งกลับมาเป็น Pydantic Model ซึ่งต้องรองรับทั้งการอ่านผ่าน `.headline` และ `.get()` จึงได้ปรับให้ `core/news_fetcher.py` รองรับทั้งสองรูปแบบ
   - Windows Terminal (cp874) ไม่รองรับ Emoji บางตัว จึงได้ใส่ `sys.stdout.reconfigure(encoding='utf-8')` ในสคริปต์ทดสอบเพื่อความเสถียร
+  - ปรับปรุง `notifications/__init__.py` ให้นำเข้าและลงทะเบียน `telegram_notifier` เข้าสู่ `dispatcher` โดยอัตโนมัติ เพื่อให้คำสั่งยิงแจ้งเตือน Pre-Market Scan และ Order Fills ส่งตรงเข้า Telegram ได้ทันทีโดยไม่ต้องเรียกคลาสด้วยตนเอง
 * **สิ่งที่ต้องทำในรอบถัดไป (Phase 4):**
   1. จัดการ Error Handling ครบวงจร (Network Disconnect, Rate Limit HTTP 429 Backoff, WebSocket Reconnect)
   2. พัฒนาระบบ Safe Mode และ Emergency Kill Switch ผ่าน DB Flag และคำสั่ง
