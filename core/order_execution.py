@@ -21,6 +21,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, QueryOrderS
 from alpaca.trading.models import Order
 
 from core.alpaca_client import alpaca_trading_client
+from core.failsafe import safe_mode_manager
 from notifications import dispatcher
 from utils.timezone import now_utc, format_multi_tz_display
 
@@ -122,6 +123,25 @@ class OrderExecutionEngine:
             client_order_id=req.client_order_id,
         )
 
+        if not safe_mode_manager.can_trade:
+            reason = f"Trading blocked: system is in {safe_mode_manager.state.value} state."
+            logger.error("Order rejected by SafeModeManager", reason=reason)
+            return OrderExecutionReport(
+                client_order_id=req.client_order_id,
+                alpaca_order_id=None,
+                symbol=symbol.upper(),
+                status="rejected",
+                filled_qty=0.0,
+                filled_avg_price=0.0,
+                expected_price=expected_price,
+                slippage_usd=0.0,
+                slippage_pct=0.0,
+                take_profit_price=take_profit_price,
+                stop_loss_price=stop_loss_price,
+                submitted_at=submitted_at,
+                error_message=reason,
+            )
+
         try:
             # 1. Dispatch order to Alpaca
             async with alpaca_trading_client as client:
@@ -155,6 +175,8 @@ class OrderExecutionEngine:
                 submitted_at=submitted_at,
             )
 
+            safe_mode_manager.record_success()
+
             # 4. Notify via Telegram
             await dispatcher.notify_trade(
                 symbol=symbol,
@@ -172,6 +194,7 @@ class OrderExecutionEngine:
 
         except Exception as e:
             logger.error("Order submission failed", symbol=symbol, error=str(e))
+            await safe_mode_manager.record_error("OrderSubmissionError", str(e))
             await dispatcher.notify_warning(f"Order failed for {symbol}: {str(e)}")
             return OrderExecutionReport(
                 client_order_id=req.client_order_id,

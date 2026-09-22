@@ -36,7 +36,7 @@
 - [x] **Phase 1: Foundation & Infrastructure** (เสร็จสมบูรณ์ - ทดสอบผ่าน 12/12 tests)
 - [x] **Phase 2: Core Trading Logic (MVP) & Backtesting** (เสร็จสมบูรณ์ - ทดสอบผ่าน 27/27 tests + รัน Backtest สำเร็จ)
 - [x] **Phase 3: AI Sentiment Integration (Gatekeeper)** (เสร็จสมบูรณ์ - ทดสอบผ่าน 33/33 tests + Live Gemini 3.8 Flash & Benzinga News สำเร็จ)
-- [ ] **Phase 4: Fail-safe, Recovery & Risk Hardening**
+- [x] **Phase 4: Fail-safe, Recovery & Risk Hardening** (เสร็จสมบูรณ์ - ทดสอบผ่าน 45/45 tests + Live Alpaca & Telegram Heartbeat สำเร็จ)
 - [ ] **Phase 5: Paper Trading & VPS Deployment**
 - [ ] **Phase 6: Live Trading ($700) & Continuous Improvement**
 
@@ -86,10 +86,12 @@
 - [x] พัฒนาชุดทดสอบ Unit Tests สำหรับ Phase 3 ครบถ้วน (รวมเป็น 33/33 tests ผ่าน 100%) พร้อมสคริปต์ทดสอบสด `scripts/verify_phase3.py`
 
 ### Phase 4: Fail-safe, Recovery & Risk Hardening
-- [ ] จัดการ Error & Exception (Network Disconnect, 429 Backoff, DB Timeout)
-- [ ] พัฒนา Safe Mode & Automatic Kill Switch
-- [ ] ทดสอบ Startup Recovery Flow (Reconcile state, ตรวจ PDT และ Gap Risk ก่อนเริ่ม)
-- [ ] Hardening Security (จำกัดสิทธิ์ API Key, Validation ทุก Input)
+- [x] จัดการ Error & Exception (Network Disconnect, 429 Backoff, DB Timeout)
+- [x] พัฒนา Safe Mode & Automatic Kill Switch (`core/failsafe.py` ควบคุมสถานะ NORMAL, SAFE_MODE, KILL_SWITCH พร้อม Cancel Open Orders อัตโนมัติ)
+- [x] พัฒนา Startup Recovery Flow (`core/startup_recovery.py` กฎเหล็ก Reconcile State ก่อนส่ง Order, ตรวจสอบโควตา PDT, ตรวจสอบ Overnight Gap Risk ของ Position ที่ถือ)
+- [x] พัฒนาระบบ System Health Check & Heartbeat Monitor (`monitoring/health_check.py` วัด Latency ของ Alpaca Broker API, ตรวจสอบ DB Pool, และส่ง Heartbeat ผ่าน Telegram)
+- [x] ผูก SafeModeManager เข้ากับ Order Execution Engine (`core/order_execution.py`) สกัดการส่งคำสั่งหากระบบอยู่ใน Safe Mode หรือ Kill Switch
+- [x] พัฒนาชุดทดสอบ Unit Tests สำหรับ Phase 4 รวมเป็น 45/45 tests ผ่าน 100% พร้อมสคริปต์ตรวจสอบสด `scripts/verify_phase4.py`
 
 ### Phase 5: Paper Trading & VPS Deployment
 - [ ] Setup Ubuntu VPS + PM2 + Python 3 + PostgreSQL
@@ -110,6 +112,47 @@
 ## 📝 บันทึกความคืบหน้ารายวัน (Daily Development Log)
 
 > *รูปแบบการบันทึก: ให้เพิ่มรายการใหม่ไว้ด้านบนสุดของส่วนนี้เสมอ*
+
+### [2026-09-22] พัฒนา Phase 4: Fail-safe, Recovery & Risk Hardening เสร็จสมบูรณ์
+* **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
+* **สิ่งที่ทำไปแล้ว:**
+  1. **Fail-Safe & Emergency Mode Manager (`core/failsafe.py`):**
+     - สร้างคลาส `SafeModeManager` ควบคุมสถานะความพร้อมของระบบ: `NORMAL`, `SAFE_MODE`, `KILL_SWITCH`
+     - ระบบตรวจจับและนับความผิดพลาดสะสมอัตโนมัติ (`record_error`): เมื่อเกิดข้อผิดพลาดต่อเนื่องเกินเกณฑ์ (threshold = 3) ระบบจะลดระดับสถานะเข้าสู่ `SAFE_MODE` ทันที
+     - `enter_safe_mode(reason)`: ระงับการเปิด Position ใหม่ทั้งหมด แต่ยังคงปล่อยให้ Bracket Orders (TP/SL) ที่ตั้งไว้ในตลาดคอยปกป้องพอร์ตตามปกติ พร้อมยิง Warning Alert เข้า Telegram และบันทึก DB
+     - `activate_kill_switch(reason)`: สั่งการฉุกเฉินระดับสูงสุด ยกเลิกคำสั่ง Pending ทั้งหมดที่ Alpaca (`alpaca_trading_client.cancel_all_orders()`) + ระงับการเทรด + ยิง Critical Alert เข้า Telegram
+     - `reset_to_normal(reason)`: ปลดล็อกกลับสู่สถานะ NORMAL เพื่อเริ่มการซื้อขายใหม่หลังตรวจสอบระบบเรียบร้อย
+  2. **Startup Recovery Engine (`core/startup_recovery.py`):**
+     - ออกแบบและพัฒนากระบวนการ Startup Sequence 5 ขั้นตอน (ทำงานอัตโนมัติเมื่อบอทบูตหรือเซิร์ฟเวอร์ Restart):
+       1. ตรวจสอบการเชื่อมต่อ Broker และ Database
+       2. ทำ Reconcile State เปรียบเทียบ Positions และ Open Orders ระหว่าง Alpaca กับ Database (เคารพกฎ No Order Without Reconcile)
+       3. ตรวจสอบโควตา **SEC Pattern Day Trading (PDT)** สำหรับพอร์ต < $25,000 (หากครบ 3 ครั้งจะแจ้งเตือนและห้ามปิด Order ภายในวันเดียวกัน)
+       4. ตรวจสอบ **Overnight Gap Risk** ของหุ้นที่ถือค้างคืน (หากมีราคาตกเกิน -3% จะสร้าง Gap Risk Alert ทันที)
+       5. ส่งสรุปรายงาน **Startup Health Report** แบบละเอียดเข้า Telegram
+  3. **Health Monitor & Heartbeat (`monitoring/health_check.py`):**
+     - ตรวจสอบความสมบูรณ์และวัด Latency ของ Alpaca Broker API (ผ่าน `get_clock()`)
+     - ตรวจสอบสถานะ Database Connection Pool
+     - ส่งสัญญาณชีพ **Heartbeat Message** สรุปสถานะการทำงาน, โหมดปัจจุบัน, ค่า Latency เข้า Telegram เป็นระยะ
+  4. **Risk Integration เข้ากับ Order Execution (`core/order_execution.py`):**
+     - ผูก `safe_mode_manager.can_trade` เข้ากับฟังก์ชัน `submit_bracket_buy`: หากระบบอยู่ใน Safe Mode หรือ Kill Switch คำสั่งซื้อจะถูกปฏิเสธทันทีเพื่อป้องกันความเสียหาย
+     - มีระบบ `record_success()` เมื่อคำสั่งซื้อขายสำเร็จ และ `record_error()` เมื่อเกิดข้อผิดพลาด
+  5. **Testing & Verification:**
+     - เพิ่ม Unit Tests อีก 12 รายการ (`test_failsafe.py`, `test_startup_recovery.py`, `test_health_check.py`) รวมชุดทดสอบทั้งหมดเป็น **45/45 รายการ ผ่านฉลุย 100%**
+     - พัฒนาสคริปต์ทดสอบสด `scripts/verify_phase4.py`:
+       - เชื่อมต่อ Alpaca Paper API จริง สำเร็จ (Equity: $100,000, BP: $400,000, PDT: 0/3)
+       - รัน Startup Recovery สำเร็จ
+       - วัด Latency Alpaca API ได้ 262ms
+       - ทดสอบจำลองการตัดเข้า Safe Mode เมื่อมี Error สะสม 3 ครั้ง และทดสอบ Reset กลับสู่ Normal ได้อย่างแม่นยำ
+       - ส่ง Telegram Heartbeat เข้ากลุ่มของผู้ใช้ได้สำเร็จ
+* **สถานะปัจจุบัน:** Phase 4 เสร็จสมบูรณ์ (Checked 100%) พร้อมเข้าสู่ Phase 5: Paper Trading & VPS Deployment
+* **ปัญหา/สิ่งที่พบและการแก้ไข:**
+  - พบว่า Alpaca API อาจส่งค่า `account.daytrade_count` เป็น `None` ได้ในกรณีบัญชีที่ยังไม่เคยมี Day Trade ซึ่งส่งผลให้คำสั่ง `int(account.daytrade_count)` เกิด TypeError — ได้ทำการแก้ไขโดยใช้ `int(account.daytrade_count) if (account and account.daytrade_count is not None) else 0` ทั้งใน `core/state_manager.py` และ `core/startup_recovery.py`
+  - ฟังก์ชัน `format_multi_tz_display` ส่งคืนค่าเป็นข้อความ `str` โดยตรง ไม่ใช่ `dict` — ได้แก้ไขการเรียกใช้ใน Alert Messages ให้แสดงผลเวลา ET และ ICT ได้อย่างสวยงาม
+* **สิ่งที่ต้องทำในรอบถัดไป (Phase 5: Paper Trading & VPS Deployment):**
+  1. จัดเตรียมโครงสร้าง Deployment บน Ubuntu VPS (PM2 process ecosystem file `ecosystem.config.js`)
+  2. ตั้งค่าการหมุนเวียนล็อก (`logrotate`) และ Cronjob สำหรับสำรองข้อมูล PostgreSQL (`pg_dump`)
+  3. ตั้งค่าระบบ Main Loop รันอย่างต่อเนื่องพร้อม Market Hours Scheduler
+  4. รัน Paper Trading ในสภาพแวดล้อมจริงเพื่อเก็บสถิติและทดสอบความเสถียร 2-4 สัปดาห์
 
 ### [2026-09-22] พัฒนา Phase 3: AI Sentiment Integration (Gatekeeper) เสร็จสมบูรณ์
 * **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)

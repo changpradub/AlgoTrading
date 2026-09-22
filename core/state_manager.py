@@ -51,7 +51,7 @@ class StateManager:
 
         equity = float(account.equity)
         buying_power = float(account.buying_power)
-        pdt_count = int(account.daytrade_count)
+        pdt_count = int(account.daytrade_count) if account.daytrade_count is not None else 0
 
         broker_symbols = {p.symbol.upper(): float(p.qty) for p in broker_positions}
 
