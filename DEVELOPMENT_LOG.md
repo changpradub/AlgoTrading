@@ -33,7 +33,7 @@
 
 ## 📊 ภาพรวมสถานะการพัฒนา (High-Level Progress Tracker)
 
-- [ ] **Phase 1: Foundation & Infrastructure** (กำลังดำเนินการ / รอดำเนินการ)
+- [x] **Phase 1: Foundation & Infrastructure** (เสร็จสมบูรณ์ - ทดสอบผ่าน 12/12 tests)
 - [ ] **Phase 2: Core Trading Logic (MVP) & Backtesting**
 - [ ] **Phase 3: AI Sentiment Integration (Gatekeeper)**
 - [ ] **Phase 4: Fail-safe, Recovery & Risk Hardening**
@@ -45,20 +45,20 @@
 ## 📋 Checklist รายละเอียดแต่ละ Phase
 
 ### Phase 1: Foundation & Infrastructure
-- [ ] จัดโครงสร้างโปรเจกต์ตาม Section 12 ใน `UNIFIED_PLAN.md`
-- [ ] สร้างไฟล์ `.env.example` และ `.gitignore`
-- [ ] สร้าง `requirements.txt` สำหรับ Python environment
-- [ ] ออกแบบและสร้าง Database Schema (PostgreSQL ผ่าน asyncpg + ตาราง `pdt_trades`)
-- [ ] ตั้งค่า Structured Logging (JSON format, แยก bot/trades/errors)
-- [ ] พัฒนา Alpaca Async Integration Client (`alpaca-py`)
-  - [ ] Account & Buying Power
-  - [ ] Market Data (WebSocket + REST)
-  - [ ] Orders & Positions query
-  - [ ] Market Hours (`get_clock()`, `get_calendar()`)
-- [ ] พัฒนา Rate Limiter Module (200 req/min บน REST)
-- [ ] พัฒนา Market Hours Scheduler (รองรับ Regular Hours, Timezone UTC vs ET vs ICT)
-- [ ] พัฒนาระบบแจ้งเตือน Notification (LINE Notify / Telegram Bot)
-- [ ] ทดสอบการเชื่อมต่อ Alpaca Paper Trading และ Database ครบวงจร
+- [x] จัดโครงสร้างโปรเจกต์ตาม Section 12 ใน `UNIFIED_PLAN.md`
+- [x] สร้างไฟล์ `.env.example` และ `.gitignore`
+- [x] สร้าง `requirements.txt` และติดตั้ง dependencies ใน `.venv`
+- [x] ออกแบบและสร้าง Database Schema (PostgreSQL ผ่าน asyncpg + ตาราง `pdt_trades` ใน `db/migrations/001_initial_schema.sql`)
+- [x] ตั้งค่า Structured Logging (JSON format, แยก bot/trades/errors ใน `utils/logger.py`)
+- [x] พัฒนา Alpaca Async Integration Client (`alpaca-py` + non-blocking thread wrapper ใน `core/alpaca_client.py` & `core/market_data.py`)
+  - [x] Account & Buying Power
+  - [x] Market Data (Historical Bars สำหรับ Warmup 100+ bars & Quotes)
+  - [x] Orders & Positions query & cancellation
+  - [x] Market Hours (`get_clock()`, `get_calendar()`)
+- [x] พัฒนา Rate Limiter Module (Token Bucket 180-200 req/min + Exponential Backoff ใน `utils/rate_limiter.py`)
+- [x] พัฒนา Market Hours Scheduler (Regular Hours 09:30-16:00 ET, Pre-market window, Timezone UTC vs ET vs ICT ใน `core/scheduler.py`)
+- [x] พัฒนาระบบแจ้งเตือน Notification (Telegram Bot async via `aiohttp` ใน `notifications/telegram_bot.py`)
+- [x] พัฒนาชุดทดสอบ Unit Tests 12 รายการ (`tests/`) ผ่าน 100% พร้อมสคริปต์ตรวจสอบ `scripts/verify_phase1.py`
 
 ### Phase 2: Core Trading Logic (MVP) & Backtesting
 - [ ] พัฒนา Technical Analysis Module (EMA, RSI, ATR, Support/Resistance)
@@ -110,7 +110,44 @@
 
 > *รูปแบบการบันทึก: ให้เพิ่มรายการใหม่ไว้ด้านบนสุดของส่วนนี้เสมอ*
 
-### [2026-09-22] ศึกษาแผนงานและจัดทำระบบบันทึกการพัฒนา
+### [2026-09-22] พัฒนา Phase 1: Foundation & Infrastructure เสร็จสมบูรณ์
+* **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
+* **สิ่งที่ทำไปแล้ว:**
+  1. **Project & Git Initialization:**
+     - รัน `git init` สร้าง repository และ branch `develop`
+     - สร้าง `.gitignore` ป้องกัน `.env`, `.venv/`, `logs/`, และ `__pycache__/`
+     - สร้าง `.env.example` ครอบคลุม Alpaca, PostgreSQL, Telegram, OpenRouter และ Risk limits
+     - สร้าง `requirements.txt` และติดตั้ง dependencies (`alpaca-py`, `asyncpg`, `pandas`, `pandas-ta`, `pydantic-settings`, `structlog`, `aiohttp`, `pytest`) ลงใน `.venv`
+  2. **Architectural Constants & Settings:**
+     - `config/constants.py`: กำหนดค่าคงที่ทางสถาปัตยกรรม (PDT 3 ครั้ง/5 วัน, Warmup ขั้นต่ำ 100 bars, Rate limit 200 req/min, เวลาตลาดเปิด-ปิด 09:30-16:00 ET)
+     - `config/settings.py`: โหลด `.env` ผ่าน `pydantic_settings` รองรับ paper/live mode
+  3. **Utilities:**
+     - `utils/timezone.py`: แปลงเวลา UTC (สำหรับ DB), US Eastern (สำหรับ Market Hours), และ Asia/Bangkok (สำหรับหน้าจอและ Alert)
+     - `utils/rate_limiter.py`: ระบบ Token Bucket Rate Limiter (Asyncio) คุมเพดาน 180-200 req/min พร้อม Exponential Backoff & Jitter
+     - `utils/logger.py`: Structured JSON Logger ผ่าน `structlog` แยกไฟล์ `bot.log`, `trades.log`, `errors.log`
+  4. **Database Layer:**
+     - `db/migrations/001_initial_schema.sql`: ออกแบบ Schema ทั้งหมด 10 ตารางตาม Section 5 ใน `UNIFIED_PLAN.md` (รวม `pdt_trades`, `orders`, `positions`, `trades_log`, `portfolio_state`)
+     - `db/connection.py`: จัดการ Connection Pool ด้วย `asyncpg`
+  5. **Core Alpaca & Market Engine:**
+     - `core/alpaca_client.py`: Async Wrapper ครอบ Alpaca Trading API ด้วย `asyncio.to_thread` + Rate Limiting
+     - `core/market_data.py`: ดึง Historical Bars ย้อนหลัง (รับประกัน Warmup >= 100 bars) และ Real-time Quotes
+     - `core/scheduler.py`: ตรวจสอบสถานะตลาดผ่าน Alpaca `get_clock()`, คำนวณเวลาที่เหลือก่อนเปิดตลาด, ควบคุม Idle State นอก Regular Hours
+  6. **Notifications:**
+     - `notifications/notifier.py`: Base class และ Dispatcher
+     - `notifications/telegram_bot.py`: ส่งแจ้งเตือนคำสั่งซื้อขายและเหตุการณ์ความเสี่ยงผ่าน Telegram Bot แบบ Async
+  7. **Testing & Verification:**
+     - เขียน Unit Tests 12 รายการ (`test_timezone.py`, `test_rate_limiter.py`, `test_scheduler.py`) รันผ่าน 100%
+     - เขียนสคริปต์ `scripts/verify_phase1.py` ตรวจสอบความพร้อมของระบบ
+* **สถานะปัจจุบัน:** Phase 1 เสร็จสมบูรณ์ (Checked 100%) พร้อมส่งมอบและเตรียมเข้าสู่ Phase 2 (Core Trading Logic & Backtesting)
+* **ปัญหา/สิ่งที่พบ:**
+  - บน Windows การติดตั้ง `ta-lib` ผ่าน C binary มักมี dependency กับ Visual Studio C++ Compiler ทางเราจึงเลือกใช้ `pandas-ta` ซึ่งเป็น pure-python/numba ที่ทำงานได้อย่างสมบูรณ์บน Python 3.12
+  - Telegram Bot ปัจจุบันถูกตั้งค่าเป็น disabled ไว้จนกว่าผู้ใช้จะนำ Token และ Chat ID มาใส่ใน `.env`
+* **สิ่งที่ต้องทำในรอบถัดไป (Phase 2):**
+  1. พัฒนา Technical Analysis Indicators (EMA, RSI, ATR) และระบบ Indicator Warmup (100+ bars)
+  2. พัฒนากลยุทธ์ Swing Trading Strategy Engine (1H/4H + 1D)
+  3. พัฒนา Risk Engine (PDT Counter 3 ครั้ง/5 วัน, Gap Risk ด้วย ATR)
+  4. พัฒนา Order Execution Engine (บังคับ Bracket Orders: Buy + TP + SL)
+  5. พัฒนา Backtesting Framework จำลอง Slippage และ Gap Risk
 * **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
 * **สิ่งที่ทำไปแล้ว:**
   1. ศึกษาและวิเคราะห์เอกสาร [UNIFIED_PLAN.md](file:///d:/AlgoTrading/UNIFIED_PLAN.md) ครบถ้วนทั้ง 14 ส่วน
