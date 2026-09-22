@@ -21,7 +21,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, QueryOrderS
 from alpaca.trading.models import Order
 
 from core.alpaca_client import alpaca_trading_client
-from notifications.notifier import dispatcher
+from notifications import dispatcher
 from utils.timezone import now_utc, format_multi_tz_display
 
 logger = structlog.get_logger(__name__)

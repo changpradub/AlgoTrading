@@ -14,7 +14,7 @@ from config.settings import settings
 from core.ai_sentiment import ai_gatekeeper, AISentimentReport, SentimentType, GatekeeperAction
 from core.alpaca_client import alpaca_trading_client
 from core.news_fetcher import news_fetcher
-from notifications.notifier import dispatcher
+from notifications import dispatcher
 from utils.timezone import now_utc, format_multi_tz_display
 
 logger = structlog.get_logger(__name__)
