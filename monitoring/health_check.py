@@ -69,11 +69,17 @@ class HealthMonitor:
     async def check_database(self) -> ComponentHealth:
         """Check PostgreSQL database pool connectivity."""
         if not db_manager.is_connected:
+            try:
+                await db_manager.connect()
+            except Exception:
+                pass
+
+        if not db_manager.is_connected:
             return ComponentHealth(
                 name="PostgreSQL Database",
-                is_healthy=True,
+                is_healthy=False,
                 latency_ms=0.0,
-                details="Offline / Standalone mode",
+                details="Offline / Disconnected",
             )
 
         start = time.perf_counter()

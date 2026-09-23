@@ -70,6 +70,12 @@ class StartupRecoveryEngine:
 
         # Step 1: Connectivity Checks
         broker_connected = False
+        if not db_manager.is_connected:
+            try:
+                await db_manager.connect()
+            except Exception as e:
+                logger.warning("Could not auto-connect to DB during startup recovery", error=str(e))
+
         db_connected = db_manager.is_connected
         account = None
 
