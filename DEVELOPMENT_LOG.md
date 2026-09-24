@@ -152,20 +152,23 @@
      - รวบรวมสถิติคำสั่งที่ปิดในวัน (Trades Count, Win/Loss, Win Rate %)
      - สรุปรายละเอียดหุ้นที่ถือครองข้ามคืน (Overnight Positions) พร้อมราคาต้นทุนและกำไรคงค้าง
      - ผูกเข้ากับ Event Loop ใน `bot.py` ให้ยิงเข้า Telegram อัตโนมัติเมื่อสิ้นสุดช่วงเวลา Regular Hours และเพิ่ม CLI flag `--daily-summary`
-  6. **Testing & Verification:**
+  6. **Deployment Guide for Oracle Cloud Always Free (`DEPLOYMENT_ORACLE_VPS.md`):**
+     - จัดทำเอกสารคู่มือขั้นตอนการติดตั้งและรันบอทบน Oracle Cloud Always Free Ubuntu VPS แบบ Step-by-Step
+     - ครอบคลุมการ Clone branch `develop`, การรัน `setup_vps.sh`, การตั้งค่า `.env`, การรัน Migration, การทดสอบคำสั่ง, และคำสั่ง PM2 ที่จำเป็น
+  7. **Testing & Verification:**
      - พัฒนาชุดทดสอบ `tests/test_daily_reporter.py` รวมชุดทดสอบทั้งหมดเป็น **54/54 รายการ ผ่านฉลุย 100%**
      - ทดสอบสด `python bot.py --daily-summary` ดึงข้อมูลบัญชีจริงและคำนวณ P/L ส่งเข้า Telegram ได้อย่างสมบูรณ์แบบ
      - ทดสอบสด `python bot.py --health-only`: วัด Latency Alpaca ได้ 997ms, DB ได้ 1.06ms, Health Status = NORMAL
      - ทดสอบสด `python bot.py --single-cycle --dry-run`: ตรวจพบตลาดปิด (Market is CLOSED, 5.65h to open) และ Shutdown ได้อย่างสะอาดสมบูรณ์
-* **สถานะปัจจุบัน:** โครงสร้างและโค้ดพร้อมสำหรับการ Deploy ขึ้นเซิร์ฟเวอร์ Oracle Cloud Always Free Ubuntu VPS
+* **สถานะปัจจุบัน:** โค้ดและคู่มือพร้อมสำหรับการ Deploy ขึ้นเซิร์ฟเวอร์ Oracle Cloud Always Free Ubuntu VPS
 * **ปัญหา/สิ่งที่พบและการแก้ไข:**
   - เมธอดสำหรับดึงคำสั่งที่เปิดค้างใน `core/alpaca_client.py` คือ `get_open_orders` ไม่ใช่ `get_orders` ได้ทำการปรับปรุงใน `bot.py` ให้ถูกต้อง
   - ฟิลด์ `target_symbol_list` ใน `config/settings.py` เป็น Python Property จึงได้ปรับปรุงใน Unit Test ให้ทำการ Patch ผ่าน `TARGET_SYMBOLS` แทน
   - ตัวเลขทศนิยมใน P/L calculation เกิด floating point precision issue ใน test เล็กน้อย ได้ทำการปัดเศษทศนิยม 2 ตำแหน่ง (`round(..., 2)`) เพื่อความถูกต้องตามหลักการเงิน
 * **สิ่งที่ต้องทำในรอบถัดไป:**
-  1. นำสคริปต์ `setup_vps.sh` ไปรันบน Oracle Cloud Ubuntu VPS ของผู้ใช้
-  2. ตั้งค่าไฟล์ `.env` บน VPS และรันคำสั่ง `init_db.py`
-  3. เริ่มต้นรัน Paper Trading ด้วย PM2 (`pm2 start ecosystem.config.js`)
+  1. Push โค้ด branch `develop` ขึ้น GitHub: `git push -u origin develop`
+  2. รันคำสั่งติดตั้งบน Oracle Cloud Ubuntu VPS ตามขั้นตอนใน `DEPLOYMENT_ORACLE_VPS.md`
+  3. ตรวจสอบการรัน Paper Trading ผ่าน PM2 และดูรายงาน Telegram รายวันต่อเนื่อง 2-4 สัปดาห์
 
 
 ### [2026-09-22] พัฒนา Phase 4: Fail-safe, Recovery & Risk Hardening เสร็จสมบูรณ์
