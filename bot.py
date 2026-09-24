@@ -44,6 +44,7 @@ from core.startup_recovery import startup_recovery_engine
 from core.state_manager import state_manager
 from core.strategy import swing_strategy, SignalType, TradingSignal
 from db.connection import db_manager
+from monitoring.daily_reporter import daily_reporter
 from monitoring.health_check import health_monitor
 from notifications import dispatcher
 from utils.timezone import now_utc, format_multi_tz_display
@@ -68,6 +69,8 @@ class TradingBot:
 
         self._stop_event = asyncio.Event()
         self._last_pre_market_date: Optional[date] = None
+        self._last_daily_report_date: Optional[date] = None
+        self._was_in_regular_hours: bool = False
         self._last_heartbeat_time: float = 0.0
 
     def trigger_shutdown(self) -> None:
@@ -156,6 +159,7 @@ class TradingBot:
 
                 if market_status.phase == MarketPhase.REGULAR_HOURS:
                     # Regular Trading Hours: run active trading pipeline
+                    self._was_in_regular_hours = True
                     await self._run_regular_hours_pipeline()
 
                 elif market_status.phase == MarketPhase.PRE_MARKET:
@@ -178,6 +182,17 @@ class TradingBot:
 
                 else:
                     # Market Closed or After-Hours: Idle state
+                    today = market_status.timestamp_utc.date()
+                    # If market just transitioned from open to closed, dispatch Daily Summary Report
+                    if self._was_in_regular_hours and self._last_daily_report_date != today:
+                        logger.info("Market session closed. Dispatching Daily Summary Report to Telegram...")
+                        try:
+                            await daily_reporter.dispatch_daily_summary()
+                            self._last_daily_report_date = today
+                        except Exception as e:
+                            logger.error("Error dispatching market close daily summary", error=str(e))
+                        self._was_in_regular_hours = False
+
                     hours_to_open = round(market_status.time_to_open_seconds / 3600.0, 2)
                     logger.info(
                         "Market is CLOSED. Bot idle.",
@@ -484,6 +499,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Run system health diagnostics, send Telegram heartbeat, and exit immediately",
     )
+    parser.add_argument(
+        "--daily-summary",
+        action="store_true",
+        help="Generate and dispatch daily P/L summary to Telegram, then exit immediately",
+    )
     return parser.parse_args()
 
 
@@ -494,6 +514,16 @@ async def main() -> None:
         print("Running Health Diagnostics & Heartbeat...")
         await health_monitor.send_heartbeat()
         print("Heartbeat sent.")
+        return
+
+    if args.daily_summary:
+        print("Generating and dispatching Daily P/L Summary to Telegram...")
+        await db_manager.connect()
+        try:
+            summary = await daily_reporter.dispatch_daily_summary()
+            print(f"Daily summary dispatched: Equity=${summary.equity:,.2f}, P/L=${summary.total_daily_pl:,.2f}")
+        finally:
+            await db_manager.disconnect()
         return
 
     if args.pre_market_only:

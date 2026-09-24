@@ -99,8 +99,8 @@
 - [x] สร้างสคริปต์อัตโนมัติสำหรับติดตั้งและตั้งค่าเครื่องเซิร์ฟเวอร์ Ubuntu / Oracle Cloud Always Free (`scripts/setup_vps.sh`)
 - [x] สร้างสคริปต์สำรองฐานข้อมูล PostgreSQL อัตโนมัติและหมุนเวียน 30 วัน (`scripts/backup_db.sh`)
 - [x] สร้างคอนฟิก Log Rotation สำหรับไฟล์ระบบใน `logs/` (`scripts/logrotate.conf`)
-- [x] สร้างสคริปต์ Git Deployment & Process Reload อัตโนมัติ (`scripts/deploy.sh`)
-- [x] พัฒนา Unit Tests ครบถ้วนสำหรับ `bot.py` (`tests/test_bot.py`) รวมเป็น 51/51 tests ผ่าน 100%
+- [x] พัฒนาระบบรายงานสรุปผลการเทรดประจำวัน (Daily P/L & Trade Summary at Market Close) ใน `monitoring/daily_reporter.py` พร้อมแจ้งเตือนเข้า Telegram
+- [x] พัฒนา Unit Tests ครบถ้วนสำหรับ `bot.py` และ `daily_reporter.py` รวมเป็น 54/54 tests ผ่าน 100%
 - [ ] ติดตั้งบน Oracle Cloud Always Free VPS จริง และเชื่อมต่อ Database/Alpaca
 - [ ] รัน Paper Trading ต่อเนื่อง 2-4 สัปดาห์ พร้อมมอนิเตอร์ผ่าน Telegram Notification
 - [ ] บันทึกและวิเคราะห์สถิติจริงเทียบกับผล Backtest
@@ -146,14 +146,22 @@
        - Health Check Heartbeat (`monitoring/health_check.py`): รายงานสัญญาณชีพ Latency และโหมดความปลอดภัย
        - Safe Mode & Kill Switch Alerts (`core/failsafe.py`): แจ้งเตือนฉุกเฉินและข้อความสั่งหยุดเทรด
        - Bot Lifecycle Events (`bot.py`): แจ้งเริ่ม/หยุดการทำงานของบอท
-  5. **Testing & Verification:**
-     - เพิ่ม Unit Tests อีก 6 รายการใน `tests/test_bot.py` รวมชุดทดสอบทั้งหมดเป็น **51/51 รายการ ผ่านฉลุย 100%**
+  5. **Daily Performance & Summary Reporter (`monitoring/daily_reporter.py`):**
+     - พัฒนาระบบคำนวณและรายงานสรุปผลการเทรดประจำวันอัตโนมัติเมื่อตลาดปิด (16:00 ET)
+     - คำนวณกำไร/ขาดทุนทั้ง Realized P/L จาก DB, Unrealized P/L จาก Position ที่เปิดอยู่, และ Total Daily P/L (% return)
+     - รวบรวมสถิติคำสั่งที่ปิดในวัน (Trades Count, Win/Loss, Win Rate %)
+     - สรุปรายละเอียดหุ้นที่ถือครองข้ามคืน (Overnight Positions) พร้อมราคาต้นทุนและกำไรคงค้าง
+     - ผูกเข้ากับ Event Loop ใน `bot.py` ให้ยิงเข้า Telegram อัตโนมัติเมื่อสิ้นสุดช่วงเวลา Regular Hours และเพิ่ม CLI flag `--daily-summary`
+  6. **Testing & Verification:**
+     - พัฒนาชุดทดสอบ `tests/test_daily_reporter.py` รวมชุดทดสอบทั้งหมดเป็น **54/54 รายการ ผ่านฉลุย 100%**
+     - ทดสอบสด `python bot.py --daily-summary` ดึงข้อมูลบัญชีจริงและคำนวณ P/L ส่งเข้า Telegram ได้อย่างสมบูรณ์แบบ
      - ทดสอบสด `python bot.py --health-only`: วัด Latency Alpaca ได้ 997ms, DB ได้ 1.06ms, Health Status = NORMAL
      - ทดสอบสด `python bot.py --single-cycle --dry-run`: ตรวจพบตลาดปิด (Market is CLOSED, 5.65h to open) และ Shutdown ได้อย่างสะอาดสมบูรณ์
 * **สถานะปัจจุบัน:** โครงสร้างและโค้ดพร้อมสำหรับการ Deploy ขึ้นเซิร์ฟเวอร์ Oracle Cloud Always Free Ubuntu VPS
 * **ปัญหา/สิ่งที่พบและการแก้ไข:**
   - เมธอดสำหรับดึงคำสั่งที่เปิดค้างใน `core/alpaca_client.py` คือ `get_open_orders` ไม่ใช่ `get_orders` ได้ทำการปรับปรุงใน `bot.py` ให้ถูกต้อง
   - ฟิลด์ `target_symbol_list` ใน `config/settings.py` เป็น Python Property จึงได้ปรับปรุงใน Unit Test ให้ทำการ Patch ผ่าน `TARGET_SYMBOLS` แทน
+  - ตัวเลขทศนิยมใน P/L calculation เกิด floating point precision issue ใน test เล็กน้อย ได้ทำการปัดเศษทศนิยม 2 ตำแหน่ง (`round(..., 2)`) เพื่อความถูกต้องตามหลักการเงิน
 * **สิ่งที่ต้องทำในรอบถัดไป:**
   1. นำสคริปต์ `setup_vps.sh` ไปรันบน Oracle Cloud Ubuntu VPS ของผู้ใช้
   2. ตั้งค่าไฟล์ `.env` บน VPS และรันคำสั่ง `init_db.py`
