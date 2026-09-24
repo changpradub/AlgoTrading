@@ -3,9 +3,8 @@ module.exports = {
     {
       name: "algotrading-bot",
       script: "bot.py",
-      // On Ubuntu VPS with virtualenv, use the python binary inside .venv:
-      // interpreter: "./.venv/bin/python3",
-      interpreter: "python3",
+      // Use Python binary inside virtualenv
+      interpreter: "./.venv/bin/python3",
       instances: 1,
       autorestart: true,
       watch: false,
