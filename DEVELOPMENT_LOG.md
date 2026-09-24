@@ -37,8 +37,9 @@
 - [x] **Phase 2: Core Trading Logic (MVP) & Backtesting** (เสร็จสมบูรณ์ - ทดสอบผ่าน 27/27 tests + รัน Backtest สำเร็จ)
 - [x] **Phase 3: AI Sentiment Integration (Gatekeeper)** (เสร็จสมบูรณ์ - ทดสอบผ่าน 33/33 tests + Live Gemini 3.8 Flash & Benzinga News สำเร็จ)
 - [x] **Phase 4: Fail-safe, Recovery & Risk Hardening** (เสร็จสมบูรณ์ - ทดสอบผ่าน 45/45 tests + Live Alpaca & Telegram Heartbeat สำเร็จ)
-- [ ] **Phase 5: Paper Trading & VPS Deployment**
-- [ ] **Phase 6: Live Trading ($700) & Continuous Improvement**
+- [x] **Phase 5: Paper Trading & VPS Deployment** (เสร็จสมบูรณ์ - ติดตั้งและรันบอทจริงบน Oracle Cloud Always Free VPS ผ่าน PM2 สำเร็จ)
+- [ ] **Phase 6: Live Trading ($700) & Continuous Improvement (Web Dashboard / Optimization)**
+
 
 ---
 
@@ -160,16 +161,21 @@
      - ทดสอบสด `python bot.py --daily-summary` ดึงข้อมูลบัญชีจริงและคำนวณ P/L ส่งเข้า Telegram ได้อย่างสมบูรณ์แบบ
      - ทดสอบสด `python bot.py --health-only`: วัด Latency Alpaca ได้ 997ms, DB ได้ 1.06ms, Health Status = NORMAL
      - ทดสอบสด `python bot.py --single-cycle --dry-run`: ตรวจพบตลาดปิด (Market is CLOSED, 5.65h to open) และ Shutdown ได้อย่างสะอาดสมบูรณ์
-* **สถานะปัจจุบัน:** ติดตั้งและทดสอบระบบบน Oracle Cloud Always Free Ubuntu VPS จริงสำเร็จ 100% (PostgreSQL, Alpaca API, และ Telegram Heartbeat ทำงานสมบูรณ์)
+* **สถานะปัจจุบัน:** ติดตั้งและเปิดรันบอทจริงบน Oracle Cloud Always Free Ubuntu VPS สำเร็จ 100%
+  - รัน `init_db.py` สร้าง 12 ตารางใน PostgreSQL สำเร็จ
+  - ทดสอบ `bot.py --health-only` ส่ง Heartbeat เข้า Telegram สำเร็จ
+  - สั่งสตาร์ตผ่าน PM2: `pm2 start ecosystem.config.js` และบันทึก `pm2 save` เรียบร้อย (สถานะ: `online`, ID: 0, memory ~102MB)
+  - บอททำงานในโหมด Paper Trading อัตโนมัติ 24 ชม. กำลังรอเปิดตลาดสหรัฐฯ คืนนี้ (20:30 น. เวลาไทย)
 * **ปัญหา/สิ่งที่พบและการแก้ไข:**
   - เมธอดสำหรับดึงคำสั่งที่เปิดค้างใน `core/alpaca_client.py` คือ `get_open_orders` ไม่ใช่ `get_orders` ได้ทำการปรับปรุงใน `bot.py` ให้ถูกต้อง
   - ฟิลด์ `target_symbol_list` ใน `config/settings.py` เป็น Python Property จึงได้ปรับปรุงใน Unit Test ให้ทำการ Patch ผ่าน `TARGET_SYMBOLS` แทน
   - ตัวเลขทศนิยมใน P/L calculation เกิด floating point precision issue ใน test เล็กน้อย ได้ทำการปัดเศษทศนิยม 2 ตำแหน่ง (`round(..., 2)`) เพื่อความถูกต้องตามหลักการเงิน
   - ปรับปรุง `ecosystem.config.js` ให้ระบุ path ของ Python Virtual Environment (`./.venv/bin/python3`) อย่างชัดเจน ป้องกันปัญหา library mismatch บน PM2
 * **สิ่งที่ต้องทำในรอบถัดไป:**
-  1. สั่งรันบอทผ่าน PM2 บน VPS: `pm2 start ecosystem.config.js` และ `pm2 save`
-  2. ปล่อยให้บอทรัน Paper Trading ต่อเนื่อง 2-4 สัปดาห์ เพื่อเก็บสถิติ Win Rate, Slippage, และ Gap Risk ในตลาดจริง
-  3. เริ่มวางแผนและพัฒนา Phase 6: Web Monitoring Dashboard & REST API สำหรับดูสถานะพอร์ตผ่าน Web UI
+  1. ติดตามการเทรดสดคืนนี้ (20:30 น.) ผ่านการแจ้งเตือน Telegram (Pre-market scan, Bracket Order fill, Daily summary ตอนตี 3)
+  2. เริ่มพัฒนา Phase 6: พัฒนา Web Monitoring Dashboard (Angular / FastAPI) เพื่อดูสถานะพอร์ตและคุมบอทผ่าน Web UI
+  3. ปรับแต่ง Parameter กลยุทธ์ หรือเตรียมเงินทุนจริง ($700) สลับเข้าสู่ Live Trading เมื่อพร้อม
+
 
 
 ### [2026-09-22] พัฒนา Phase 4: Fail-safe, Recovery & Risk Hardening เสร็จสมบูรณ์
