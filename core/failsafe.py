@@ -95,12 +95,12 @@ class SafeModeManager:
         # 1. Dispatch Telegram Warning
         tz_time = format_multi_tz_display(self.activated_at)
         alert_text = (
-            f"⚠️ *SYSTEM ALERT: SAFE MODE ACTIVATED*\n"
+            f"⚠️ <b>ระบบแจ้งเตือน: เข้าสู่เซฟโหมด (SAFE MODE)</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• *Status:* SAFE MODE (No new trades)\n"
-            f"• *Reason:* {reason}\n"
-            f"• *Time:* {tz_time}\n"
-            f"• *Action:* Active bracket orders remain monitored.\n"
+            f"• <b>สถานะ:</b> SAFE MODE (ระงับการเปิด Position ใหม่)\n"
+            f"• <b>สาเหตุ:</b> {reason}\n"
+            f"• <b>การทำงาน:</b> ออร์เดอร์ Bracket TP/SL เดิมยังคงทำงานเพื่อปกป้องพอร์ต\n"
+            f"• <b>เวลา:</b> {tz_time}\n"
             f"━━━━━━━━━━━━━━━━━━━━━"
         )
         try:
@@ -150,16 +150,16 @@ class SafeModeManager:
 
         # 2. Dispatch Critical Telegram Alert
         tz_time = format_multi_tz_display(self.activated_at)
-        cancel_status = "All pending orders canceled." if orders_canceled else "Order cancellation attempted."
+        cancel_status = "ยกเลิกคำสั่งที่เปิดค้างทั้งหมดแล้ว" if orders_canceled else "พยายามส่งคำสั่งยกเลิกแล้ว"
         alert_text = (
-            f"🚨 *CRITICAL EMERGENCY: KILL SWITCH TRIGGERED*\n"
+            f"🚨 <b>แจ้งเตือนฉุกเฉินระดับสูงสุด: เปิดใช้งานคิลสวิตช์ (KILL SWITCH)</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• *Status:* SYSTEM HALTED\n"
-            f"• *Reason:* {reason}\n"
-            f"• *Orders Action:* {cancel_status}\n"
-            f"• *Time:* {tz_time}\n"
+            f"• <b>สถานะ:</b> ระบบหยุดการทำงานทั้งหมด (HALTED)\n"
+            f"• <b>สาเหตุ:</b> {reason}\n"
+            f"• <b>คำสั่งในตลาด:</b> {cancel_status}\n"
+            f"• <b>เวลา:</b> {tz_time}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Manual intervention required to restore trading."
+            f"⚠️ <i>จำเป็นต้องให้ผู้ดูแลตรวจสอบและสั่งปลดล็อกก่อนเริ่มเทรดใหม่</i>"
         )
         try:
             await dispatcher.notify_critical(alert_text)
@@ -208,11 +208,11 @@ class SafeModeManager:
         logger.info("System state restored to NORMAL", previous_state=old_state.value, reason=reason)
 
         alert_text = (
-            f"✅ *SYSTEM RECOVERY: RETURNED TO NORMAL*\n"
+            f"✅ <b>กู้คืนระบบ: ปลดล็อกกลับสู่สถานะปกติ (NORMAL)</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• *Status:* NORMAL (Trading active)\n"
-            f"• *Recovery Reason:* {reason}\n"
-            f"• *Previous State:* {old_state.value}\n"
+            f"• <b>สถานะ:</b> ปกติ (พร้อมเปิดการซื้อขาย)\n"
+            f"• <b>เหตุผลการปลดล็อก:</b> {reason}\n"
+            f"• <b>สถานะก่อนหน้า:</b> {old_state.value}\n"
             f"━━━━━━━━━━━━━━━━━━━━━"
         )
         try:

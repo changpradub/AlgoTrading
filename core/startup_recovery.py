@@ -182,29 +182,29 @@ class StartupRecoveryEngine:
         """Format and dispatch the startup report to Telegram."""
         tz_time = format_multi_tz_display(report.timestamp)
         status_emoji = "🟢" if report.system_ready else "🔴"
-        status_text = "READY FOR TRADING" if report.system_ready else "HALTED / SAFE MODE"
+        status_text = "พร้อมเทรด (READY FOR TRADING)" if report.system_ready else "ระงับการเทรด / เซฟโหมด (SAFE MODE)"
 
         gap_section = ""
         if report.gap_alerts:
-            gap_section = "\n*⚠️ Overnight Gap Risk Alerts:*\n"
+            gap_section = "\n<b>⚠️ แจ้งเตือนความเสี่ยง Gap ข้ามคืน:</b>\n"
             for g in report.gap_alerts:
                 gap_section += f"  • {g.symbol}: {g.unrealized_plpc:+.2f}% (${g.unrealized_pl:+.2f})\n"
 
         notes_section = "\n".join([f"• {n}" for n in report.notes])
 
         message = (
-            f"{status_emoji} *ALGO-TRADING BOT: STARTUP RECOVERY REPORT*\n"
+            f"{status_emoji} <b>รายงานตรวจสอบระบบตอนเริ่มต้น (STARTUP HEALTH REPORT)</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• *Status:* {status_text}\n"
-            f"• *Time:* {tz_time}\n"
-            f"• *Equity:* ${report.equity:,.2f} | *Cash BP:* ${report.buying_power:,.2f}\n"
-            f"• *PDT Status:* {report.pdt_daytrade_count}/3 used ({report.pdt_allowed_remaining} left)\n"
-            f"• *Active Positions:* {report.open_positions_count}\n"
-            f"• *Pending Orders:* {report.open_orders_count}\n"
+            f"• <b>สถานะระบบ:</b> {status_text}\n"
+            f"• <b>มูลค่าพอร์ต (Equity):</b> ${report.equity:,.2f} | <b>กำลังซื้อ (Buying Power):</b> ${report.buying_power:,.2f}\n"
+            f"• <b>โควตา Day Trade (PDT):</b> ใช้ไป {report.pdt_daytrade_count}/3 ครั้ง (เหลือ {report.pdt_allowed_remaining} ครั้ง)\n"
+            f"• <b>จำนวน Position ที่ถือ:</b> {report.open_positions_count} รายการ\n"
+            f"• <b>คำสั่งที่เปิดค้าง:</b> {report.open_orders_count} รายการ\n"
             f"{gap_section}"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"*System Diagnostic:*\n"
+            f"<b>ผลการตรวจสอบย่อย:</b>\n"
             f"{notes_section}\n"
+            f"• <b>เวลา:</b> {tz_time}\n"
             f"━━━━━━━━━━━━━━━━━━━━━"
         )
 

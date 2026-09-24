@@ -50,9 +50,9 @@ class TelegramNotifier(BaseNotifier):
 
     async def send_message(self, text: str, severity: AlertSeverity = AlertSeverity.INFO) -> bool:
         icon_map = {
-            AlertSeverity.INFO: "ℹ️ <b>[INFO]</b>",
-            AlertSeverity.WARNING: "⚠️ <b>[WARNING]</b>",
-            AlertSeverity.CRITICAL: "🛑 <b>[CRITICAL ALERT]</b>",
+            AlertSeverity.INFO: "ℹ️ <b>[ข้อมูลระบบ]</b>",
+            AlertSeverity.WARNING: "⚠️ <b>[แจ้งเตือน]</b>",
+            AlertSeverity.CRITICAL: "🛑 <b>[แจ้งเตือนวิกฤต]</b>",
         }
         icon = icon_map.get(severity, "ℹ️")
         time_str = format_multi_tz_display(now_utc())
@@ -67,11 +67,11 @@ class TelegramNotifier(BaseNotifier):
         sl = details.get("sl", "N/A")
 
         text = (
-            f"🎯 <b>TRADE FILLED: {action.upper()} {symbol.upper()}</b>\n"
-            f"• <b>Qty:</b> {qty}\n"
-            f"• <b>Entry:</b> ${price}\n"
-            f"• <b>Take Profit:</b> ${tp}\n"
-            f"• <b>Stop Loss:</b> ${sl}\n"
+            f"🎯 <b>คำสั่งซื้อขายสำเร็จ: {action.upper()} {symbol.upper()}</b>\n"
+            f"• <b>จำนวน:</b> {qty} หุ้น\n"
+            f"• <b>ราคาที่ได้ (Entry):</b> {price}\n"
+            f"• <b>เป้าทำกำไร (TP):</b> {tp}\n"
+            f"• <b>จุดตัดขาดทุน (SL):</b> {sl}\n"
             f"<code>{time_str}</code>"
         )
         return await self._send_payload(text)
@@ -84,7 +84,7 @@ class TelegramNotifier(BaseNotifier):
                 detail_lines += f"\n• <b>{k}:</b> {v}"
 
         text = (
-            f"🚨 <b>RISK ENGINE EVENT: {event_type.upper()}</b>\n"
+            f"🚨 <b>แจ้งเตือนความเสี่ยง (Risk Event): {event_type.upper()}</b>\n"
             f"{message}{detail_lines}\n"
             f"<code>{time_str}</code>"
         )

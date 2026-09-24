@@ -106,26 +106,26 @@ class PreMarketScanner:
 
         if summary.has_high_risk_events:
             lines = [
-                "⚠️ <b>PRE-MARKET GAP RISK ALERT</b>",
+                "⚠️ <b>แจ้งเตือนความเสี่ยงข่าวก่อนตลาดเปิด (PRE-MARKET GAP RISK)</b>",
                 f"<code>{time_str}</code>",
-                f"Scanned {len(summary.scanned_symbols)} stocks before market open.\n",
-                "<b>Potential Adverse Gap Events Detected:</b>",
+                f"สแกนหุ้นทั้งหมด {len(summary.scanned_symbols)} ตัวก่อนตลาดเปิด\n",
+                "<b>พบข่าวเหตุการณ์ความเสี่ยงรุนแรง:</b>",
             ]
             for w in summary.gap_warnings:
                 lines.append(
-                    f"• <b>{w['symbol']}</b>: [{w['impact']}] {w['event_type']}\n"
+                    f"• <b>{w['symbol']}</b>: [ผลกระทบ: {w['impact']}] {w['event_type']}\n"
                     f"  <i>{w['reasoning']}</i>"
                 )
-            lines.append("\n🛡️ <i>AI Gatekeeper will veto new BUY signals for affected symbols today.</i>")
+            lines.append("\n🛡️ <i>AI Gatekeeper จะทำการ VETO (ระงับสัญญาณซื้อ) สำหรับหุ้นเหล่านี้ในวันนี้</i>")
             msg = "\n".join(lines)
             await dispatcher.notify_warning(msg)
 
         else:
             lines = [
-                "📗 <b>PRE-MARKET SCAN COMPLETED</b>",
+                "📗 <b>สแกนข่าวก่อนตลาดเปิดเสร็จสมบูรณ์ (PRE-MARKET SCAN)</b>",
                 f"<code>{time_str}</code>",
-                f"Scanned: {', '.join(summary.scanned_symbols)}",
-                "Status: <b>All Clear. No High-Impact Risk Events Detected.</b>",
+                f"หุ้นที่สแกน: {', '.join(summary.scanned_symbols)}",
+                "สถานะ: <b>ปกติ ไม่พบเหตุการณ์ข่าวที่มีความเสี่ยงสูง</b>",
             ]
             msg = "\n".join(lines)
             await dispatcher.notify_info(msg)

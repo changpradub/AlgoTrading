@@ -142,20 +142,23 @@ class HealthMonitor:
         """
         report = await self.run_diagnostics()
         tz_time = format_multi_tz_display(report.timestamp)
-
         emoji = "💚" if report.overall_healthy else "💛"
         alpaca_h = report.components["alpaca"]
         db_h = report.components["database"]
 
+        status_text = "ทำงานปกติ (OPERATIONAL)" if report.overall_healthy else "ต้องตรวจสอบ (ATTENTION NEEDED)"
+        kill_switch_text = "เปิดใช้งานฉุกเฉิน 🚨" if report.kill_switch_active else "ปิดอยู่ (ปลอดภัย 🛡️)"
+        alpaca_status = f"ปกติ ({alpaca_h.latency_ms:.1f}ms - {alpaca_h.details})" if alpaca_h.is_healthy else f"ขัดข้อง ({alpaca_h.details})"
+
         msg = (
-            f"{emoji} *SYSTEM HEARTBEAT: HEALTH CHECK*\n"
+            f"{emoji} <b>สัญญาณชีพตรวจเช็คระบบ (SYSTEM HEARTBEAT)</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• *Status:* {'OPERATIONAL' if report.overall_healthy else 'ATTENTION NEEDED'}\n"
-            f"• *Mode:* {report.safe_mode_state}\n"
-            f"• *Kill Switch:* {'ACTIVATED 🚨' if report.kill_switch_active else 'Deactivated 🛡️'}\n"
-            f"• *Alpaca API:* {'OK' if alpaca_h.is_healthy else 'FAILED'} ({alpaca_h.latency_ms:.1f}ms - {alpaca_h.details})\n"
-            f"• *Database:* {db_h.details} ({db_h.latency_ms:.1f}ms)\n"
-            f"• *Time:* {tz_time}\n"
+            f"• <b>สถานะรวม:</b> {status_text}\n"
+            f"• <b>โหมดความปลอดภัย:</b> {report.safe_mode_state}\n"
+            f"• <b>คิลสวิตช์:</b> {kill_switch_text}\n"
+            f"• <b>Alpaca Broker API:</b> {alpaca_status}\n"
+            f"• <b>Database (PostgreSQL):</b> {db_h.details} ({db_h.latency_ms:.1f}ms)\n"
+            f"• <b>เวลา:</b> {tz_time}\n"
             f"━━━━━━━━━━━━━━━━━━━━━"
         )
 

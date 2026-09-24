@@ -138,7 +138,15 @@
      - `scripts/backup_db.sh`: สำรองฐานข้อมูล PostgreSQL ด้วย `pg_dump` บีบอัด gzip และลบไฟล์เก่าเกิน 30 วันอัตโนมัติ
      - `scripts/deploy.sh`: สคริปต์ Git pull อัปเดตโค้ด, pip install, รัน DB migration, และสั่ง PM2 reload
      - `scripts/logrotate.conf`: คอนฟิกหมุนเวียนล็อกรายวันในไดเรกทอรี `logs/`
-  4. **Testing & Verification:**
+  4. **Thai Localization สำหรับ Telegram Notifications:**
+     - ปรับข้อความการแจ้งเตือนทั้งหมดเป็นภาษาไทยที่อ่านง่าย ชัดเจน ครอบคลุม:
+       - Trade Filled (`notifications/telegram_bot.py`): แจ้งจำนวนหุ้น, ราคาเฉลี่ย, จุด TP, จุด SL
+       - Startup Health Report (`core/startup_recovery.py`): สรุปสถานะพอร์ต, โควตา PDT, จำนวน Position/Order, Gap alerts
+       - Pre-Market Gap Scan (`core/pre_market_scan.py`): แจ้งเตือนความเสี่ยงข่าวก่อนตลาดเปิด
+       - Health Check Heartbeat (`monitoring/health_check.py`): รายงานสัญญาณชีพ Latency และโหมดความปลอดภัย
+       - Safe Mode & Kill Switch Alerts (`core/failsafe.py`): แจ้งเตือนฉุกเฉินและข้อความสั่งหยุดเทรด
+       - Bot Lifecycle Events (`bot.py`): แจ้งเริ่ม/หยุดการทำงานของบอท
+  5. **Testing & Verification:**
      - เพิ่ม Unit Tests อีก 6 รายการใน `tests/test_bot.py` รวมชุดทดสอบทั้งหมดเป็น **51/51 รายการ ผ่านฉลุย 100%**
      - ทดสอบสด `python bot.py --health-only`: วัด Latency Alpaca ได้ 997ms, DB ได้ 1.06ms, Health Status = NORMAL
      - ทดสอบสด `python bot.py --single-cycle --dry-run`: ตรวจพบตลาดปิด (Market is CLOSED, 5.65h to open) และ Shutdown ได้อย่างสะอาดสมบูรณ์

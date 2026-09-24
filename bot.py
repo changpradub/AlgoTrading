@@ -113,15 +113,15 @@ class TradingBot:
                 return False
 
         # 3. Dispatch Bot Started notification
-        mode_label = "DRY-RUN / SIMULATION" if self.dry_run else settings.TRADING_MODE.upper()
+        mode_label = "จำลองการเทรด (DRY-RUN)" if self.dry_run else f"เทรดโหมด {settings.TRADING_MODE.upper()}"
         start_msg = (
-            f"🚀 <b>PERSONAL ALGO-TRADING BOT STARTED</b>\n"
+            f"🚀 <b>บอทเทรดหุ้นสหรัฐฯ เริ่มทำงานแล้ว</b>\n"
             f"<code>{format_multi_tz_display(now_utc())}</code>\n"
-            f"• Mode: <b>{mode_label}</b>\n"
-            f"• Target Watchlist: <b>{', '.join(settings.target_symbol_list)}</b>\n"
-            f"• Tranche Budget: <b>${settings.TRADE_BUDGET_PER_TRANCHE_USD:.2f}</b>\n"
-            f"• Max Daily Loss: <b>${settings.MAX_DAILY_LOSS_USD:.2f}</b>\n"
-            f"• Status: <b>Online & Monitoring Market Clock</b>"
+            f"• โหมดการทำงาน: <b>{mode_label}</b>\n"
+            f"• หุ้นเป้าหมาย: <b>{', '.join(settings.target_symbol_list)}</b>\n"
+            f"• งบประมาณต่อไม้: <b>${settings.TRADE_BUDGET_PER_TRANCHE_USD:.2f}</b>\n"
+            f"• ขาดทุนสูงสุดต่อวัน: <b>${settings.MAX_DAILY_LOSS_USD:.2f}</b>\n"
+            f"• สถานะ: <b>ออนไลน์ พร้อมเฝ้าติดตามตลาด</b>"
         )
         try:
             await dispatcher.notify_info(start_msg)
@@ -444,9 +444,9 @@ class TradingBot:
         logger.info("Shutting down Trading Bot gracefully...")
         try:
             stop_msg = (
-                f"🛑 <b>TRADING BOT STOPPED</b>\n"
+                f"🛑 <b>บอทเทรดหุ้นสหรัฐฯ หยุดการทำงานแล้ว</b>\n"
                 f"<code>{format_multi_tz_display(now_utc())}</code>\n"
-                f"Bot process terminated safely."
+                f"โปรเซสบอทถูกสั่งหยุดทำงานอย่างปลอดภัย (Graceful Shutdown)"
             )
             await dispatcher.notify_info(stop_msg)
         except Exception as e:
