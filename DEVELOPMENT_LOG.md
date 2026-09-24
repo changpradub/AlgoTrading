@@ -94,10 +94,15 @@
 - [x] พัฒนาชุดทดสอบ Unit Tests สำหรับ Phase 4 รวมเป็น 45/45 tests ผ่าน 100% พร้อมสคริปต์ตรวจสอบสด `scripts/verify_phase4.py`
 
 ### Phase 5: Paper Trading & VPS Deployment
-- [ ] Setup Ubuntu VPS + PM2 + Python 3 + PostgreSQL
-- [ ] ติดตั้ง Log Rotation (`logrotate`) และ Cronjob สำรองฐานข้อมูล (`pg_dump`)
-- [ ] ตั้งค่า Git Deployment Workflow (develop → VPS Paper Trading, main → Live)
-- [ ] รัน Paper Trading ต่อเนื่อง 2-4 สัปดาห์ พร้อมมอนิเตอร์ผ่าน Notification
+- [x] พัฒนา Main Asynchronous Event Loop Coordinator (`bot.py` ควบคุม Market Hours, Pre-Market Gap Scan, Indicator Warmup, Strategy, AI Gatekeeper, Risk Engine, Position Sizing, Bracket Orders, Failsafe)
+- [x] สร้างไฟล์คอนฟิก PM2 Process Management สำหรับ Ubuntu VPS (`ecosystem.config.js`)
+- [x] สร้างสคริปต์อัตโนมัติสำหรับติดตั้งและตั้งค่าเครื่องเซิร์ฟเวอร์ Ubuntu / Oracle Cloud Always Free (`scripts/setup_vps.sh`)
+- [x] สร้างสคริปต์สำรองฐานข้อมูล PostgreSQL อัตโนมัติและหมุนเวียน 30 วัน (`scripts/backup_db.sh`)
+- [x] สร้างคอนฟิก Log Rotation สำหรับไฟล์ระบบใน `logs/` (`scripts/logrotate.conf`)
+- [x] สร้างสคริปต์ Git Deployment & Process Reload อัตโนมัติ (`scripts/deploy.sh`)
+- [x] พัฒนา Unit Tests ครบถ้วนสำหรับ `bot.py` (`tests/test_bot.py`) รวมเป็น 51/51 tests ผ่าน 100%
+- [ ] ติดตั้งบน Oracle Cloud Always Free VPS จริง และเชื่อมต่อ Database/Alpaca
+- [ ] รัน Paper Trading ต่อเนื่อง 2-4 สัปดาห์ พร้อมมอนิเตอร์ผ่าน Telegram Notification
 - [ ] บันทึกและวิเคราะห์สถิติจริงเทียบกับผล Backtest
 
 ### Phase 6: Live Trading & Continuous Improvement
@@ -112,6 +117,40 @@
 ## 📝 บันทึกความคืบหน้ารายวัน (Daily Development Log)
 
 > *รูปแบบการบันทึก: ให้เพิ่มรายการใหม่ไว้ด้านบนสุดของส่วนนี้เสมอ*
+
+### [2026-09-24] พัฒนา Main Bot Engine & โครงสร้าง VPS Deployment (Phase 5)
+* **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
+* **สิ่งที่ทำไปแล้ว:**
+  1. **Master Asynchronous Bot Coordinator (`bot.py`):**
+     - พัฒนาคลาส `TradingBot` ที่รันบน Python `asyncio` event loop สมบูรณ์แบบ
+     - รัน Startup Sequence: เชื่อมต่อ Database Pool + รัน `StartupRecoveryEngine` กู้คืนและ Reconcile สถานะ
+     - รองรับ Market Hours Loop:
+       - หากตลาดอยู่ในช่วง **Pre-Market** (04:00 - 09:30 ET): สั่งรัน `PreMarketScanner` อัตโนมัติ 1 ครั้งต่อวัน พร้อมเตือน Gap Risk เข้า Telegram
+       - หากตลาดอยู่ในช่วง **Regular Hours** (09:30 - 16:00 ET): Reconcile สถานะกับ Alpaca, ดึงข้อมูลแท่งเทียน 1H/1D, ตรวจ Indicator Warmup (>= 100 bars), รันกลยุทธ์ `SwingTrendPullbackStrategy`, กรองสัญญาณผ่าน `AISentimentGatekeeper`, ตรวจสอบความปลอดภัยผ่าน `RiskEngine` (PDT + Daily Loss + ATR Gap Risk), คำนวณ `PositionSizingCalculator`, และส่งคำสั่ง `Bracket Orders` พร้อมระบบติดตามสถานะ Fill แบบ Async
+       - หากตลาด **Closed / After-Hours**: เข้าสู่สถานะ Idle พักการทำงานและตรวจสอบเวลาตลาดเปิดรอบถัดไป
+     - มีระบบ Graceful Shutdown ดักจับสัญญาณ `SIGINT` และ `SIGTERM` ปิด DB connection pool และแจ้งเตือนสถานะหยุดทำงาน
+     - รองรับ CLI Flags สำหรับการทดสอบและปฏิบัติการ: `--dry-run`, `--single-cycle`, `--health-only`, `--pre-market-only`
+  2. **PM2 Ecosystem Configuration (`ecosystem.config.js`):**
+     - ออกแบบการจัดการโปรเซสบน Ubuntu VPS (Oracle Cloud Always Free)
+     - ตั้งค่า Restart Delay (5s), Memory limit (1GB), Auto-restart on crash, และ Log separation
+  3. **VPS Automation Scripts (`scripts/`):**
+     - `scripts/setup_vps.sh`: สคริปต์ตั้งค่า Ubuntu 22.04/24.04 ติดตั้ง Python 3, venv, PostgreSQL (สร้าง user/database `algo_trading`), Node.js LTS, PM2, logrotate, และ backup cronjob
+     - `scripts/backup_db.sh`: สำรองฐานข้อมูล PostgreSQL ด้วย `pg_dump` บีบอัด gzip และลบไฟล์เก่าเกิน 30 วันอัตโนมัติ
+     - `scripts/deploy.sh`: สคริปต์ Git pull อัปเดตโค้ด, pip install, รัน DB migration, และสั่ง PM2 reload
+     - `scripts/logrotate.conf`: คอนฟิกหมุนเวียนล็อกรายวันในไดเรกทอรี `logs/`
+  4. **Testing & Verification:**
+     - เพิ่ม Unit Tests อีก 6 รายการใน `tests/test_bot.py` รวมชุดทดสอบทั้งหมดเป็น **51/51 รายการ ผ่านฉลุย 100%**
+     - ทดสอบสด `python bot.py --health-only`: วัด Latency Alpaca ได้ 997ms, DB ได้ 1.06ms, Health Status = NORMAL
+     - ทดสอบสด `python bot.py --single-cycle --dry-run`: ตรวจพบตลาดปิด (Market is CLOSED, 5.65h to open) และ Shutdown ได้อย่างสะอาดสมบูรณ์
+* **สถานะปัจจุบัน:** โครงสร้างและโค้ดพร้อมสำหรับการ Deploy ขึ้นเซิร์ฟเวอร์ Oracle Cloud Always Free Ubuntu VPS
+* **ปัญหา/สิ่งที่พบและการแก้ไข:**
+  - เมธอดสำหรับดึงคำสั่งที่เปิดค้างใน `core/alpaca_client.py` คือ `get_open_orders` ไม่ใช่ `get_orders` ได้ทำการปรับปรุงใน `bot.py` ให้ถูกต้อง
+  - ฟิลด์ `target_symbol_list` ใน `config/settings.py` เป็น Python Property จึงได้ปรับปรุงใน Unit Test ให้ทำการ Patch ผ่าน `TARGET_SYMBOLS` แทน
+* **สิ่งที่ต้องทำในรอบถัดไป:**
+  1. นำสคริปต์ `setup_vps.sh` ไปรันบน Oracle Cloud Ubuntu VPS ของผู้ใช้
+  2. ตั้งค่าไฟล์ `.env` บน VPS และรันคำสั่ง `init_db.py`
+  3. เริ่มต้นรัน Paper Trading ด้วย PM2 (`pm2 start ecosystem.config.js`)
+
 
 ### [2026-09-22] พัฒนา Phase 4: Fail-safe, Recovery & Risk Hardening เสร็จสมบูรณ์
 * **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
