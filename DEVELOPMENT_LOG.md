@@ -101,9 +101,9 @@
 - [x] สร้างคอนฟิก Log Rotation สำหรับไฟล์ระบบใน `logs/` (`scripts/logrotate.conf`)
 - [x] พัฒนาระบบรายงานสรุปผลการเทรดประจำวัน (Daily P/L & Trade Summary at Market Close) ใน `monitoring/daily_reporter.py` พร้อมแจ้งเตือนเข้า Telegram
 - [x] พัฒนา Unit Tests ครบถ้วนสำหรับ `bot.py` และ `daily_reporter.py` รวมเป็น 54/54 tests ผ่าน 100%
-- [ ] ติดตั้งบน Oracle Cloud Always Free VPS จริง และเชื่อมต่อ Database/Alpaca
-- [ ] รัน Paper Trading ต่อเนื่อง 2-4 สัปดาห์ พร้อมมอนิเตอร์ผ่าน Telegram Notification
-- [ ] บันทึกและวิเคราะห์สถิติจริงเทียบกับผล Backtest
+- [x] ติดตั้งบน Oracle Cloud Always Free VPS จริง เชื่อมต่อ Database และทดสอบ Telegram Heartbeat สำเร็จ
+- [x] เริ่มรัน Paper Trading ผ่าน PM2 พร้อมมอนิเตอร์ผ่าน Telegram Notification อัตโนมัติ 24 ชั่วโมง
+- [ ] รันเก็บสถิติและผลงานต่อเนื่อง 2-4 สัปดาห์ เพื่อนำไปวิเคราะห์เทียบกับผล Backtest
 
 ### Phase 6: Live Trading & Continuous Improvement
 - [ ] สลับเข้าสู่ Live Trading ด้วยเงินทุนจริง ~$700
@@ -160,15 +160,16 @@
      - ทดสอบสด `python bot.py --daily-summary` ดึงข้อมูลบัญชีจริงและคำนวณ P/L ส่งเข้า Telegram ได้อย่างสมบูรณ์แบบ
      - ทดสอบสด `python bot.py --health-only`: วัด Latency Alpaca ได้ 997ms, DB ได้ 1.06ms, Health Status = NORMAL
      - ทดสอบสด `python bot.py --single-cycle --dry-run`: ตรวจพบตลาดปิด (Market is CLOSED, 5.65h to open) และ Shutdown ได้อย่างสะอาดสมบูรณ์
-* **สถานะปัจจุบัน:** โค้ดและคู่มือพร้อมสำหรับการ Deploy ขึ้นเซิร์ฟเวอร์ Oracle Cloud Always Free Ubuntu VPS
+* **สถานะปัจจุบัน:** ติดตั้งและทดสอบระบบบน Oracle Cloud Always Free Ubuntu VPS จริงสำเร็จ 100% (PostgreSQL, Alpaca API, และ Telegram Heartbeat ทำงานสมบูรณ์)
 * **ปัญหา/สิ่งที่พบและการแก้ไข:**
   - เมธอดสำหรับดึงคำสั่งที่เปิดค้างใน `core/alpaca_client.py` คือ `get_open_orders` ไม่ใช่ `get_orders` ได้ทำการปรับปรุงใน `bot.py` ให้ถูกต้อง
   - ฟิลด์ `target_symbol_list` ใน `config/settings.py` เป็น Python Property จึงได้ปรับปรุงใน Unit Test ให้ทำการ Patch ผ่าน `TARGET_SYMBOLS` แทน
   - ตัวเลขทศนิยมใน P/L calculation เกิด floating point precision issue ใน test เล็กน้อย ได้ทำการปัดเศษทศนิยม 2 ตำแหน่ง (`round(..., 2)`) เพื่อความถูกต้องตามหลักการเงิน
+  - ปรับปรุง `ecosystem.config.js` ให้ระบุ path ของ Python Virtual Environment (`./.venv/bin/python3`) อย่างชัดเจน ป้องกันปัญหา library mismatch บน PM2
 * **สิ่งที่ต้องทำในรอบถัดไป:**
-  1. Push โค้ด branch `develop` ขึ้น GitHub: `git push -u origin develop`
-  2. รันคำสั่งติดตั้งบน Oracle Cloud Ubuntu VPS ตามขั้นตอนใน `DEPLOYMENT_ORACLE_VPS.md`
-  3. ตรวจสอบการรัน Paper Trading ผ่าน PM2 และดูรายงาน Telegram รายวันต่อเนื่อง 2-4 สัปดาห์
+  1. สั่งรันบอทผ่าน PM2 บน VPS: `pm2 start ecosystem.config.js` และ `pm2 save`
+  2. ปล่อยให้บอทรัน Paper Trading ต่อเนื่อง 2-4 สัปดาห์ เพื่อเก็บสถิติ Win Rate, Slippage, และ Gap Risk ในตลาดจริง
+  3. เริ่มวางแผนและพัฒนา Phase 6: Web Monitoring Dashboard & REST API สำหรับดูสถานะพอร์ตผ่าน Web UI
 
 
 ### [2026-09-22] พัฒนา Phase 4: Fail-safe, Recovery & Risk Hardening เสร็จสมบูรณ์
