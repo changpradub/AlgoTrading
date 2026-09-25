@@ -27,12 +27,14 @@ from utils.timezone import now_utc
 
 @pytest.fixture
 def sample_bars_df():
-    """Create a sample OHLCV DataFrame with 120 bars (exceeds 100 warmup bars)."""
+    """Create a sample OHLCV DataFrame with 120 bars (exceeds 100 warmup bars).
+    The last bar timestamp is at now_utc() to prevent data staleness check from triggering."""
     rows = []
     base_time = now_utc()
     price = 140.0
     for i in range(120):
-        t = base_time - pd.Timedelta(hours=120 - i)
+        # Last bar (i=119) will be at base_time - 0 minutes = current time
+        t = base_time - pd.Timedelta(minutes=(120 - i - 1) * 5)
         rows.append({
             "timestamp": t,
             "open": price,
@@ -163,14 +165,19 @@ async def test_bot_pipeline_cycle_buy_execution(sample_bars_df):
     with patch("bot.state_manager.reconcile_state", new_callable=AsyncMock, return_value=mock_recon), \
          patch("bot.alpaca_trading_client.get_all_positions", new_callable=AsyncMock, return_value=[]), \
          patch("bot.alpaca_trading_client.get_open_orders", new_callable=AsyncMock, return_value=[]), \
+         patch("bot.position_manager.check_bracket_fills", new_callable=AsyncMock, return_value=[]), \
+         patch("bot.position_manager.evaluate_exit_conditions", new_callable=AsyncMock, return_value=[]), \
          patch("bot.market_data_client.get_historical_bars", new_callable=AsyncMock, return_value=sample_bars_df), \
          patch("bot.swing_strategy.evaluate", return_value=buy_signal), \
          patch("bot.ai_gatekeeper.evaluate_signal_gatekeeper", new_callable=AsyncMock, return_value=ai_decision), \
          patch("bot.risk_engine.validate_signal", return_value=risk_result), \
          patch("bot.position_calculator.calculate", return_value=size_result), \
          patch("bot.order_engine.submit_bracket_buy", new_callable=AsyncMock, return_value=order_report) as mock_submit, \
-         patch("bot.order_engine.monitor_order_fill", new_callable=AsyncMock, return_value=MagicMock(status="filled")):
+         patch("bot.trade_logger.log_order_submitted", new_callable=AsyncMock, return_value=1), \
+         patch("bot.trade_logger.log_trade_opened", new_callable=AsyncMock, return_value=None), \
+         patch("bot.db_manager") as mock_db:
 
+        mock_db.is_connected = False
         with patch.object(settings, "TARGET_SYMBOLS", "NVDA"):
             await bot._run_regular_hours_pipeline()
             assert mock_submit.called

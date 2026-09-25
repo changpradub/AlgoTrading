@@ -36,6 +36,7 @@ from core.alpaca_client import alpaca_trading_client
 from core.failsafe import safe_mode_manager
 from core.market_data import market_data_client
 from core.order_execution import order_engine
+from core.position_manager import position_manager
 from core.position_sizing import position_calculator
 from core.pre_market_scan import pre_market_scanner
 from core.risk_engine import risk_engine
@@ -43,11 +44,15 @@ from core.scheduler import market_scheduler, MarketPhase
 from core.startup_recovery import startup_recovery_engine
 from core.state_manager import state_manager
 from core.strategy import swing_strategy, SignalType, TradingSignal
+from core.trade_logger import trade_logger
 from db.connection import db_manager
 from monitoring.daily_reporter import daily_reporter
 from monitoring.health_check import health_monitor
 from notifications import dispatcher
 from utils.timezone import now_utc, format_multi_tz_display
+
+# Maximum acceptable data age (seconds) before considering it stale
+DATA_STALENESS_THRESHOLD_SEC = 600  # 10 minutes
 
 logger = structlog.get_logger("bot")
 
@@ -114,6 +119,16 @@ class TradingBot:
             await safe_mode_manager.record_error("StartupRecoveryError", str(e))
             if not self.dry_run:
                 return False
+
+        # 2b. Sync Position Manager from broker (restore active trade tracking)
+        try:
+            await position_manager.sync_from_broker()
+            logger.info(
+                "Position Manager synced from broker",
+                active_trades=position_manager.active_symbols,
+            )
+        except Exception as e:
+            logger.warning("Position Manager sync failed", error=str(e))
 
         # 3. Dispatch Bot Started notification
         mode_label = "จำลองการเทรด (DRY-RUN)" if self.dry_run else f"เทรดโหมด {settings.TRADING_MODE.upper()}"
@@ -245,7 +260,19 @@ class TradingBot:
             )
             return
 
-        # 3. Retrieve currently open positions and open orders from Alpaca
+        # 3. Check for Bracket Order TP/SL Fills (P0-2)
+        try:
+            closed_symbols = await position_manager.check_bracket_fills()
+            if closed_symbols:
+                logger.info("Bracket fills detected", closed=closed_symbols)
+                # Re-reconcile after detected closures
+                recon = await state_manager.reconcile_state()
+                equity = recon.account_equity
+                buying_power = recon.buying_power
+        except Exception as e:
+            logger.warning("Error checking bracket fills", error=str(e))
+
+        # 4. Retrieve currently open positions and open orders from Alpaca
         open_positions: List[str] = []
         open_order_symbols: List[str] = []
         try:
@@ -265,9 +292,10 @@ class TradingBot:
             try:
                 row = await db_manager.fetchrow(
                     """
-                    SELECT COALESCE(SUM(realized_pl), 0.0) as today_pl
+                    SELECT COALESCE(SUM(net_pnl), 0.0) as today_pl
                     FROM trades_log
-                    WHERE exit_time >= CURRENT_DATE AND exit_time IS NOT NULL
+                    WHERE exit_time >= CURRENT_DATE
+                      AND exit_reason != 'open'
                     """
                 )
                 if row and row["today_pl"] < 0:
@@ -275,7 +303,35 @@ class TradingBot:
             except Exception as e:
                 logger.warning("Could not calculate current daily loss from DB", error=str(e))
 
-        # 4. Iterate over Watchlist Symbols
+        # 5. Evaluate Exit Conditions for Open Positions (P0-3)
+        df_1h_map: Dict[str, "pd.DataFrame"] = {}
+        for symbol in open_positions:
+            try:
+                df = await market_data_client.get_historical_bars(
+                    symbol=symbol,
+                    timeframe=TimeFrame.Hour,
+                    limit=WARMUP_BARS_MIN + 20,
+                )
+                df_1h_map[symbol] = df
+            except Exception as e:
+                logger.warning("Failed to fetch data for exit eval", symbol=symbol, error=str(e))
+
+        try:
+            exit_candidates = await position_manager.evaluate_exit_conditions(df_1h_map)
+            for symbol in exit_candidates:
+                if self.dry_run:
+                    logger.info("[DRY-RUN] Would execute strategy exit", symbol=symbol)
+                else:
+                    success = await position_manager.execute_strategy_exit(symbol)
+                    if success:
+                        logger.info("Strategy exit executed", symbol=symbol)
+                        # Refresh positions after exit
+                        positions = await alpaca_trading_client.get_all_positions()
+                        open_positions = [p.symbol.upper() for p in positions]
+        except Exception as e:
+            logger.warning("Error evaluating exit conditions", error=str(e))
+
+        # 6. Iterate over Watchlist Symbols for new entries
         for symbol in settings.target_symbol_list:
             symbol = symbol.upper()
             try:
@@ -327,6 +383,20 @@ class TradingBot:
                 bars=len(df_1h),
             )
             return
+
+        # P0-4: Data Staleness Check — reject if latest bar is too old
+        if not df_1h.empty:
+            last_bar_time = df_1h.index[-1]
+            staleness_sec = (now_utc() - last_bar_time).total_seconds()
+            if staleness_sec > DATA_STALENESS_THRESHOLD_SEC:
+                logger.warning(
+                    "Data staleness detected — skipping signal generation",
+                    symbol=symbol,
+                    staleness_sec=round(staleness_sec, 1),
+                    threshold_sec=DATA_STALENESS_THRESHOLD_SEC,
+                    last_bar=str(last_bar_time),
+                )
+                return
 
         # Fetch Daily data for higher-timeframe trend confirmation
         df_1d = await market_data_client.get_historical_bars(
@@ -440,15 +510,43 @@ class TradingBot:
                 order_id=order_report.alpaca_order_id,
                 symbol=symbol,
             )
-            # Async fill monitoring
-            filled_order = await order_engine.monitor_order_fill(
+
+            # P0-1: Log order submission to DB
+            await trade_logger.log_order_submitted(
                 alpaca_order_id=order_report.alpaca_order_id,
-                timeout_seconds=30,
-            )
-            logger.info(
-                "Order monitoring concluded",
+                client_order_id=order_report.client_order_id,
                 symbol=symbol,
-                status=getattr(filled_order, "status", "unknown"),
+                side="buy",
+                qty=order_report.filled_qty,
+                status=order_report.status,
+                filled_qty=order_report.filled_qty,
+                filled_avg_price=order_report.filled_avg_price,
+                take_profit_price=signal.take_profit,
+                stop_loss_price=signal.stop_loss,
+            )
+
+            # P0-1: Log trade opened to trades_log
+            if order_report.status in ("filled", "partially_filled", "accepted", "new"):
+                trade_record = await trade_logger.log_trade_opened(
+                    symbol=symbol,
+                    side="buy",
+                    qty=order_report.filled_qty if order_report.filled_qty > 0 else size_res.shares,
+                    entry_price=order_report.filled_avg_price if order_report.filled_avg_price > 0 else signal.entry_price,
+                    entry_time=now_utc(),
+                    take_profit=signal.take_profit,
+                    stop_loss=signal.stop_loss,
+                    alpaca_order_id=order_report.alpaca_order_id,
+                )
+
+                # P0-2: Register trade for bracket fill monitoring
+                if trade_record:
+                    trade_record.client_order_id = order_report.client_order_id
+                    position_manager.register_trade(trade_record)
+
+            logger.info(
+                "Order processing completed",
+                symbol=symbol,
+                status=order_report.status,
             )
 
             # Reconcile state after order completion

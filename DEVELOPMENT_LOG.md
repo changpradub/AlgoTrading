@@ -1,5 +1,6 @@
 # Personal Algo-Trading Bot — Development Log & Progress Tracker
 
+> **อ่าน DEVELOPMENT_LOG.md แล้วสรุปสถานะล่าสุด พร้อมเริ่มงานต่อได้เลย"หรือ"เริ่มงานต่อจากเมื่อวานเลย วันนี้ทำอะไรต่อดี**
 > **ไฟล์นี้เป็น Single Source of Truth สำหรับบันทึกความคืบหน้าการพัฒนาทั้งหมด**  
 > ทุกครั้งที่มีการแก้ไข, เพิ่มฟีเจอร์, ทดสอบ หรือพัฒนาระบบ **ต้องอัปเดตไฟล์นี้อย่างละเอียดเสมอ**
 
@@ -118,6 +119,114 @@
 ## 📝 บันทึกความคืบหน้ารายวัน (Daily Development Log)
 
 > *รูปแบบการบันทึก: ให้เพิ่มรายการใหม่ไว้ด้านบนสุดของส่วนนี้เสมอ*
+
+### [2026-09-25] P1 System Improvements — Strategy, Trailing Stop, AI Cache, Market Regime, UPSERT
+* **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
+* **บริบท:** ปรับปรุงระบบต่อจาก P0 Critical Fixes ที่เสร็จเมื่อวาน
+* **สิ่งที่ทำไปแล้ว:**
+  1. **P1-1: เพิ่ม Volume SMA, MACD, Market Regime ใน Technical Engine (`core/technical.py`)**
+     - Volume SMA 20-period + Volume Ratio (current/average)
+     - MACD (12/26/9): Line, Signal, Histogram
+     - Market Regime Detection: TRENDING / RANGING / VOLATILE (ATR%-based + EMA alignment)
+  2. **P1-2: ปรับปรุง Strategy Engine (`core/strategy.py`)**
+     - เพิ่ม Volume Confirmation: volume >= 80% ของค่าเฉลี่ย 20 bars
+     - เพิ่ม MACD Momentum: histogram > 0 หรือกำลังเพิ่มขึ้น
+     - เพิ่ม Market Regime Filter: Block BUY ทันทีถ้า regime = VOLATILE
+     - ปรับ HOLD reason ให้ระบุ condition ที่ไม่ผ่านแต่ละข้อ (เพื่อ debug)
+  3. **P1-3: แก้ State Manager ให้ UPSERT แทน DELETE ALL (`core/state_manager.py`)**
+     - ใช้ `ON CONFLICT (symbol) DO UPDATE` แทน `DELETE FROM positions`
+     - Position ที่ปิดแล้ว → mark qty=0 แทนการลบ (preserve history)
+  4. **P1-4: เพิ่ม AI Sentiment Cache 30 นาที (`core/ai_sentiment.py`)**
+     - In-memory cache per symbol, TTL 30 นาที
+     - Cache hit → skip API call → ลดค่าใช้จ่าย OpenRouter
+     - เพิ่ม `clear_cache()` สำหรับ manual reset
+     - เพิ่ม timeout จาก 15 → 30 วินาที
+  5. **P1-5: สร้าง Trailing Stop Manager (`core/trailing_stop.py`)**
+     - 3-Tier ATR-based activation:
+       - Tier 1 (1.5×ATR): ขยับ SL ไปที่ breakeven
+       - Tier 2 (2.5×ATR): ขยับ SL ไปที่ entry + 1×ATR
+       - Tier 3 (3.5×ATR): ขยับ SL ไปที่ entry + 2×ATR
+     - Dynamic trail: SL ตาม highest_price - trail_distance
+     - กฎเหล็ก: SL ห้ามขยับลง (เฉพาะขึ้นเท่านั้น)
+  6. **สร้าง Tests สำหรับ P1 (`tests/test_p1_improvements.py`)**
+     - 13 tests ใหม่ ครอบคลุมทุก module ที่ปรับปรุง
+     - **ผลลัพธ์: 75/75 tests ผ่านทั้งหมด** ✅
+* **ไฟล์ที่สร้างใหม่:**
+  - `core/trailing_stop.py` — Trailing Stop Manager (ATR-tiered)
+  - `tests/test_p1_improvements.py` — 13 tests สำหรับ P1 improvements
+* **ไฟล์ที่แก้ไข:**
+  - `core/technical.py` — เพิ่ม Volume SMA, MACD, Market Regime
+  - `core/strategy.py` — เพิ่ม Volume/MACD/Regime filters + detailed HOLD reasons
+  - `core/state_manager.py` — UPSERT แทน DELETE ALL
+  - `core/ai_sentiment.py` — AI result cache 30 นาที + timeout 30s
+* **งานที่ต้องทำถัดไป:**
+  - [ ] Integrate trailing_stop_manager เข้ากับ position_manager/bot.py pipeline
+  - [ ] เพิ่ม Alpaca Trade Updates WebSocket (แทน REST polling)
+  - [ ] รัน Migration 002 บน VPS PostgreSQL
+  - [ ] Deploy โค้ดทั้งหมดขึ้น VPS + ทดสอบ Paper Trading
+
+
+* **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)
+* **บริบท:** วิเคราะห์ระบบเชิงลึกพบ 5 จุดวิกฤติที่ต้องแก้ก่อน Live Trading
+* **สิ่งที่ทำไปแล้ว:**
+  1. **P0-1: สร้าง Trade Logger Module (`core/trade_logger.py`)**
+     - เขียนข้อมูล Order submission ลง `orders` table
+     - เขียน Trade entry ลง `trades_log` ทันทีหลัง Bracket Order ถูก submit
+     - Update `trades_log` ด้วย exit data (ราคาออก, P&L, เหตุผล) เมื่อ TP/SL trigger
+     - ส่ง Telegram notification เมื่อปิด position สำเร็จ พร้อมรายละเอียด P&L
+     - **ก่อนแก้:** trades_log ว่างเปล่า → Daily P/L = 0 เสมอ, Max Daily Loss check ไม่ทำงาน
+  2. **P0-2: สร้าง Position Manager Module (`core/position_manager.py`)**
+     - ติดตาม lifecycle ของ active trades ที่รอ TP/SL fill
+     - ตรวจจับ bracket fill events โดยเทียบ broker positions vs tracked trades
+     - Sync from broker เมื่อ startup เพื่อกู้คืน tracking state หลัง VPS restart
+     - ค้นหา TP/SL prices จาก Alpaca open orders อัตโนมัติ
+     - **ก่อนแก้:** ไม่รู้ว่า TP/SL trigger เมื่อไหร่ → trades_log ไม่ถูก update
+  3. **P0-3: เพิ่ม Active Exit Logic (Strategy-based SELL)**
+     - เพิ่ม 3 exit conditions ใน `PositionManager.evaluate_exit_conditions()`:
+       - Trend Reversal: EMA 20 cross below EMA 50
+       - RSI Overbought: RSI >= 75
+       - Time-based Exit: ถือ >= 20 bars แต่ราคาไม่ขึ้นเลย (< +0.5%)
+     - เพิ่ม `execute_strategy_exit()` สำหรับปิด position ด้วย Market Sell Order
+     - ยกเลิก bracket legs (TP/SL) ก่อนส่ง sell order
+     - **ก่อนแก้:** ระบบรอแค่ TP/SL อัตโนมัติ → position อาจค้างไม่มีกำหนด
+  4. **P0-4: เพิ่ม Data Staleness Check (`bot.py`)**
+     - ตรวจสอบ age ของ bar ล่าสุดก่อนสร้าง signal
+     - Threshold: 600 วินาที (10 นาที) — ถ้าข้อมูลเก่ากว่า → skip signal generation
+     - ป้องกันการเทรดด้วยราคาที่ผิดพลาดจาก stale data
+  5. **P0-5: แก้ `async with alpaca_trading_client` bug (`core/order_execution.py`)**
+     - `AlpacaAsyncTradingClient` ไม่ได้ implement `__aenter__`/`__aexit__`
+     - แก้เป็น `raw_client = alpaca_trading_client._ensure_client()` โดยตรง
+  6. **อัปเดต `bot.py` Pipeline:**
+     - เพิ่มขั้นตอน bracket fill check ทุก cycle
+     - เพิ่ม exit condition evaluation สำหรับ open positions ทุก cycle
+     - เพิ่ม daily loss calculation จาก `trades_log` (ใช้ `net_pnl` แทน `realized_pl`)
+     - Sync Position Manager จาก broker เมื่อ startup
+  7. **สร้าง DB Migration (`db/migrations/002_trade_tracking_indexes.sql`)**
+     - เพิ่ม index สำหรับ `exit_reason` ใน `trades_log`
+     - เพิ่ม partial index สำหรับ daily P/L queries
+  8. **อัปเดต Tests:**
+     - แก้ `test_bot_pipeline_cycle_buy_execution` ให้ mock modules ใหม่
+     - แก้ `sample_bars_df` fixture ให้ last bar = เวลาปัจจุบัน (ป้องกัน staleness check trigger)
+     - สร้าง `tests/test_trade_lifecycle.py` (8 tests ใหม่)
+     - **ผลลัพธ์: 62/62 tests ผ่านทั้งหมด** ✅
+* **ไฟล์ที่สร้างใหม่:**
+  - `core/trade_logger.py` — Trade persistence module
+  - `core/position_manager.py` — Position lifecycle manager
+  - `db/migrations/002_trade_tracking_indexes.sql` — DB indexes for trade queries
+  - `tests/test_trade_lifecycle.py` — 8 unit tests สำหรับ modules ใหม่
+* **ไฟล์ที่แก้ไข:**
+  - `bot.py` — เพิ่ม imports, position manager sync, bracket fill check, exit eval, trade logging, data staleness check
+  - `core/order_execution.py` — แก้ async with bug
+  - `tests/test_bot.py` — อัปเดต fixture + mocks สำหรับ pipeline ใหม่
+* **งานที่ต้องทำถัดไป (P1):**
+  - [ ] เพิ่ม Trailing Stop Loss logic
+  - [ ] เพิ่ม Volume Confirmation ใน Strategy
+  - [ ] เพิ่ม AI Result Cache (30 นาที)
+  - [ ] ปรับ `_sync_db_positions()` ให้ UPSERT แทน DELETE ALL
+  - [ ] เพิ่ม Market Regime Detection
+  - [ ] รัน Migration 002 บน VPS PostgreSQL
+  - [ ] Deploy โค้ดใหม่ขึ้น VPS และทดสอบกับ Paper Trading
+
 
 ### [2026-09-24] พัฒนา Main Bot Engine & โครงสร้าง VPS Deployment (Phase 5)
 * **ผู้ปฏิบัติงาน:** Pair Programming (User + Antigravity AI)

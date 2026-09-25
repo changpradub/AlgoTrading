@@ -144,9 +144,8 @@ class OrderExecutionEngine:
 
         try:
             # 1. Dispatch order to Alpaca
-            async with alpaca_trading_client as client:
-                raw_client = alpaca_trading_client._ensure_client()
-                order: Order = await asyncio.to_thread(raw_client.submit_order, req)
+            raw_client = alpaca_trading_client._ensure_client()
+            order: Order = await asyncio.to_thread(raw_client.submit_order, req)
 
             # 2. Monitor status until accepted or filled
             alpaca_id = str(order.id)

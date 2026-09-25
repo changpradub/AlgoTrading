@@ -131,6 +131,10 @@ class SwingTrendPullbackStrategy(BaseStrategy):
         ema_medium = float(curr["ema_50"])
         rsi = float(curr["rsi"])
         atr = float(curr["atr"])
+        volume_ratio = float(curr.get("volume_ratio", 1.0))
+        macd_hist = float(curr.get("macd_histogram", 0.0))
+        macd_hist_prev = float(prev.get("macd_histogram", 0.0))
+        market_regime = str(curr.get("market_regime", "RANGING"))
 
         # 4. Check Pullback & Entry Conditions
         # Condition A: General Uptrend on LTF (EMA 20 > EMA 50)
@@ -146,6 +150,15 @@ class SwingTrendPullbackStrategy(BaseStrategy):
         # Condition D: Bullish Candle (close >= open)
         candle_bullish = float(curr["close"]) >= float(curr["open"])
 
+        # Condition E (NEW): Volume Confirmation — current volume >= 80% of 20-bar average
+        volume_confirmed = volume_ratio >= 0.8
+
+        # Condition F (NEW): MACD Momentum — histogram positive or rising
+        macd_supportive = (macd_hist > 0) or (macd_hist > macd_hist_prev)
+
+        # Condition G (NEW): Market Regime — block entries in VOLATILE regime
+        regime_ok = market_regime != "VOLATILE"
+
         snapshot = {
             "close": close,
             "ema_20": ema_fast,
@@ -153,9 +166,26 @@ class SwingTrendPullbackStrategy(BaseStrategy):
             "rsi": rsi,
             "atr": atr,
             "htf_bullish": htf_bullish,
+            "volume_ratio": round(volume_ratio, 2),
+            "macd_histogram": round(macd_hist, 4),
+            "market_regime": market_regime,
         }
 
-        if trend_ok and near_ema and rsi_rebounding and candle_bullish:
+        # Block entry if Market Regime is VOLATILE
+        if not regime_ok:
+            return TradingSignal(
+                symbol=symbol,
+                signal_type=SignalType.HOLD,
+                entry_price=close,
+                stop_loss=0.0,
+                take_profit=0.0,
+                risk_reward_ratio=0.0,
+                timeframe="1H",
+                indicator_snapshot=snapshot,
+                reason=f"Market regime is VOLATILE (ATR% too high). Entry blocked.",
+            )
+
+        if trend_ok and near_ema and rsi_rebounding and candle_bullish and volume_confirmed and macd_supportive:
             # Calculate Bracket Targets
             sl = round(max(0.01, close - (self.sl_atr_multiplier * atr)), 2)
             tp = round(close + (self.tp_atr_multiplier * atr), 2)
@@ -168,6 +198,9 @@ class SwingTrendPullbackStrategy(BaseStrategy):
                 sl=sl,
                 tp=tp,
                 rr=rr,
+                volume_ratio=round(volume_ratio, 2),
+                macd_hist=round(macd_hist, 4),
+                regime=market_regime,
             )
 
             return TradingSignal(
@@ -179,8 +212,23 @@ class SwingTrendPullbackStrategy(BaseStrategy):
                 risk_reward_ratio=rr,
                 timeframe="1H",
                 indicator_snapshot=snapshot,
-                reason="Trend pullback to EMA 20 with RSI rebound and HTF confirmation.",
+                reason="Trend pullback to EMA 20 with RSI rebound, volume confirmation, MACD support, and HTF confirmation.",
             )
+
+        # Build detailed HOLD reason for debugging
+        hold_reasons = []
+        if not trend_ok:
+            hold_reasons.append("EMA20 < EMA50 (no uptrend)")
+        if not near_ema:
+            hold_reasons.append(f"price too far from EMA20 ({dist_to_ema:.1%})")
+        if not rsi_rebounding:
+            hold_reasons.append(f"RSI not rebounding (RSI={rsi:.1f})")
+        if not candle_bullish:
+            hold_reasons.append("bearish candle")
+        if not volume_confirmed:
+            hold_reasons.append(f"low volume (ratio={volume_ratio:.2f})")
+        if not macd_supportive:
+            hold_reasons.append("MACD histogram negative & declining")
 
         return TradingSignal(
             symbol=symbol,
@@ -191,7 +239,45 @@ class SwingTrendPullbackStrategy(BaseStrategy):
             risk_reward_ratio=0.0,
             timeframe="1H",
             indicator_snapshot=snapshot,
-            reason="Market conditions do not meet entry criteria.",
+            reason=f"No entry: {'; '.join(hold_reasons)}.",
+        )
+
+    def evaluate_exit(self, symbol: str, df_ltf: pd.DataFrame, df_htf: Optional[pd.DataFrame] = None) -> TradingSignal:
+        """
+        Evaluate if an active position should be actively closed (SELL signal) before hitting SL/TP.
+        Exit if trend completely breaks down.
+        """
+        from core.technical import technical_engine
+        if not technical_engine.is_warmed_up(df_ltf):
+            return TradingSignal(symbol=symbol, signal_type=SignalType.HOLD, entry_price=0, stop_loss=0, take_profit=0, risk_reward_ratio=0, timeframe="LTF")
+            
+        ltf_calc = technical_engine.calculate_indicators(df_ltf)
+        curr = ltf_calc.iloc[-1]
+        close = float(curr["close"])
+        ema_medium = float(curr["ema_50"])
+        
+        # Active Exit Condition: 1H price breaks significantly below 1H EMA 50
+        if close < ema_medium * 0.995:  # 0.5% buffer to avoid false wicks
+            return TradingSignal(
+                symbol=symbol,
+                signal_type=SignalType.SELL,
+                entry_price=close,
+                stop_loss=0.0,
+                take_profit=0.0,
+                risk_reward_ratio=0.0,
+                timeframe="1H",
+                indicator_snapshot={"close": close, "ema_50": ema_medium},
+                reason="Trend breakdown: Price closed significantly below 1H EMA 50. Active exit triggered."
+            )
+            
+        return TradingSignal(
+            symbol=symbol, 
+            signal_type=SignalType.HOLD, 
+            entry_price=close, 
+            stop_loss=0.0, 
+            take_profit=0.0, 
+            risk_reward_ratio=0.0, 
+            timeframe="1H"
         )
 
 

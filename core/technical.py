@@ -87,6 +87,48 @@ class TechnicalAnalysisEngine:
             df[f"ema_{self.ema_medium}"] > df[f"ema_{self.ema_slow}"]
         )
 
+        # 6. Volume Confirmation (SMA 20-period)
+        if "volume" in df.columns:
+            df["volume_sma_20"] = df["volume"].rolling(window=20).mean()
+            df["volume_ratio"] = df["volume"] / df["volume_sma_20"].replace(0, np.nan)
+            df["volume_ratio"] = df["volume_ratio"].fillna(1.0)
+        else:
+            df["volume_sma_20"] = 0.0
+            df["volume_ratio"] = 1.0
+
+        # 7. MACD (12/26/9)
+        ema_12 = df["close"].ewm(span=12, adjust=False).mean()
+        ema_26 = df["close"].ewm(span=26, adjust=False).mean()
+        df["macd_line"] = ema_12 - ema_26
+        df["macd_signal"] = df["macd_line"].ewm(span=9, adjust=False).mean()
+        df["macd_histogram"] = df["macd_line"] - df["macd_signal"]
+
+        # 8. Market Regime Detection
+        #    TRENDING: ADX-like proxy (ATR% low + clear EMA alignment)
+        #    RANGING: Price oscillating between swing_high and swing_low, narrow ATR
+        #    VOLATILE: ATR% > 3% (high volatility)
+        df["market_regime"] = "RANGING"  # default
+
+        # Volatile regime: ATR > 3% of price
+        volatile_mask = df["atr_pct"] >= 3.0
+        df.loc[volatile_mask, "market_regime"] = "VOLATILE"
+
+        # Trending regime: strong EMA alignment + moderate ATR
+        trending_mask = (
+            (df[f"ema_{self.ema_fast}"] > df[f"ema_{self.ema_medium}"])
+            & (df[f"ema_{self.ema_medium}"] > df[f"ema_{self.ema_slow}"])
+            & (~volatile_mask)
+        )
+        df.loc[trending_mask, "market_regime"] = "TRENDING"
+
+        # Also detect bearish trend
+        bearish_trend_mask = (
+            (df[f"ema_{self.ema_fast}"] < df[f"ema_{self.ema_medium}"])
+            & (df[f"ema_{self.ema_medium}"] < df[f"ema_{self.ema_slow}"])
+            & (~volatile_mask)
+        )
+        df.loc[bearish_trend_mask, "market_regime"] = "TRENDING"
+
         return df
 
     def get_latest_snapshot(self, df: pd.DataFrame) -> Dict[str, float]:

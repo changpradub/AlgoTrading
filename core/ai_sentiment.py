@@ -84,7 +84,10 @@ Do NOT output any markdown commentary outside the JSON block. Output raw JSON on
 
 
 class AISentimentGatekeeper:
-    """Async AI Gatekeeper connecting to OpenRouter API."""
+    """Async AI Gatekeeper connecting to OpenRouter API with result caching."""
+
+    # Cache AI analysis results for 30 minutes per symbol
+    AI_CACHE_TTL_SECONDS = 1800  # 30 minutes
 
     def __init__(
         self,
@@ -95,6 +98,8 @@ class AISentimentGatekeeper:
         self.api_key = api_key or settings.OPENROUTER_API_KEY
         self.model = model or settings.OPENROUTER_MODEL
         self.fallback_model = fallback_model
+        # In-memory cache: symbol -> (AISentimentReport, cached_at_datetime)
+        self._cache: Dict[str, tuple[AISentimentReport, datetime]] = {}
 
     def _clean_json_response(self, text: str) -> Dict[str, Any]:
         """Extract and parse clean JSON from LLM output."""
@@ -119,7 +124,14 @@ class AISentimentGatekeeper:
     ) -> AISentimentReport:
         """
         Send news articles to OpenRouter (Gemini 3.8 Flash) for risk & sentiment evaluation.
+        Results are cached for 30 minutes per symbol to reduce API costs.
         """
+        # Check cache first
+        cached = self._get_cached(symbol)
+        if cached is not None:
+            logger.info("AI analysis cache hit", symbol=symbol, cached_at=str(cached.analyzed_at))
+            return cached
+
         if not articles:
             # If no news available, default to neutral PASS
             return AISentimentReport(
@@ -182,7 +194,7 @@ class AISentimentGatekeeper:
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers=headers,
                         json=payload,
-                        timeout=15.0,
+                    timeout=30.0,
                     ) as resp:
                         if resp.status != 200:
                             err_body = await resp.text()
@@ -219,6 +231,9 @@ class AISentimentGatekeeper:
                             sentiment=report.sentiment.value,
                             risk_event=report.risk_event,
                         )
+
+                        # Cache the result
+                        self._set_cache(symbol, report)
 
                         # Save to DB if connected
                         await self._save_ai_analysis(report)
@@ -309,6 +324,29 @@ class AISentimentGatekeeper:
             )
         except Exception as e:
             logger.warning("Could not persist AI analysis to DB", error=str(e))
+
+    def _get_cached(self, symbol: str) -> Optional[AISentimentReport]:
+        """Return cached AI report if still within TTL, otherwise None."""
+        key = symbol.upper()
+        if key not in self._cache:
+            return None
+        report, cached_at = self._cache[key]
+        elapsed = (now_utc() - cached_at).total_seconds()
+        if elapsed > self.AI_CACHE_TTL_SECONDS:
+            del self._cache[key]
+            return None
+        return report
+
+    def _set_cache(self, symbol: str, report: AISentimentReport) -> None:
+        """Store AI report in cache with current timestamp."""
+        self._cache[symbol.upper()] = (report, now_utc())
+
+    def clear_cache(self, symbol: Optional[str] = None) -> None:
+        """Clear cache for a specific symbol or all symbols."""
+        if symbol:
+            self._cache.pop(symbol.upper(), None)
+        else:
+            self._cache.clear()
 
 
 # Global AI Gatekeeper singleton
