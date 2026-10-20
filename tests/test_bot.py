@@ -228,3 +228,103 @@ def test_cli_argument_parsing():
         assert args.single_cycle is True
         assert args.pre_market_only is False
         assert args.health_only is False
+
+
+@pytest.mark.asyncio
+async def test_bot_staleness_check_blocks_truly_stale_data():
+    """Verify that data older than threshold skips strategy evaluation."""
+    from datetime import timedelta
+    bot = TradingBot(dry_run=True, single_cycle=True)
+
+    # DataFrame with bars from 10 days ago (truly stale)
+    old_time = now_utc() - timedelta(days=10)
+    rows = []
+    for i in range(120):
+        t = old_time - pd.Timedelta(minutes=(120 - i - 1) * 60)
+        rows.append({
+            "timestamp": t,
+            "open": 140.0,
+            "high": 141.0,
+            "low": 139.0,
+            "close": 140.5,
+            "volume": 10000.0,
+        })
+    stale_df = pd.DataFrame(rows).set_index("timestamp")
+
+    mock_recon = ReconciliationReport(
+        is_synchronized=True,
+        broker_positions_count=0,
+        db_positions_count=0,
+        matched_symbols=[],
+        mismatches=[],
+        account_equity=700.0,
+        buying_power=700.0,
+        pdt_daytrade_count=0,
+    )
+
+    with patch("bot.state_manager.reconcile_state", new_callable=AsyncMock, return_value=mock_recon), \
+         patch("bot.alpaca_trading_client.get_all_positions", new_callable=AsyncMock, return_value=[]), \
+         patch("bot.alpaca_trading_client.get_open_orders", new_callable=AsyncMock, return_value=[]), \
+         patch("bot.market_data_client.get_historical_bars", new_callable=AsyncMock, return_value=stale_df), \
+         patch("bot.swing_strategy.evaluate") as mock_strategy:
+
+        with patch.object(settings, "TARGET_SYMBOLS", "NVDA"):
+            await bot._run_regular_hours_pipeline()
+            # Stale data must cause early return BEFORE strategy evaluation
+            assert not mock_strategy.called
+
+
+@pytest.mark.asyncio
+async def test_bot_staleness_check_early_session_allows_overnight():
+    """Verify that during first 75 min of market open, overnight/weekend close (< 4 days) is accepted."""
+    from datetime import timedelta
+    bot = TradingBot(dry_run=True, single_cycle=True)
+
+    # Bar from 18 hours ago (overnight from yesterday's close)
+    yesterday_close = now_utc() - timedelta(hours=18)
+    rows = []
+    for i in range(120):
+        t = yesterday_close - pd.Timedelta(minutes=(120 - i - 1) * 60)
+        rows.append({
+            "timestamp": t,
+            "open": 140.0,
+            "high": 141.0,
+            "low": 139.0,
+            "close": 140.5,
+            "volume": 10000.0,
+        })
+    overnight_df = pd.DataFrame(rows).set_index("timestamp")
+
+    mock_recon = ReconciliationReport(
+        is_synchronized=True,
+        broker_positions_count=0,
+        db_positions_count=0,
+        matched_symbols=[],
+        mismatches=[],
+        account_equity=700.0,
+        buying_power=700.0,
+        pdt_daytrade_count=0,
+    )
+
+    # Market is in REGULAR_HOURS with 6.0 hours left to close (first 30 min of session)
+    mock_status = MarketClockSnapshot(
+        is_open=True,
+        phase=MarketPhase.REGULAR_HOURS,
+        timestamp_utc=now_utc(),
+        next_open_utc=now_utc() + timedelta(days=1),
+        next_close_utc=now_utc() + timedelta(hours=6),
+        time_to_open_seconds=0.0,
+        time_to_close_seconds=6.0 * 3600,  # 6 hours left (> 5.25h)
+    )
+
+    with patch("bot.state_manager.reconcile_state", new_callable=AsyncMock, return_value=mock_recon), \
+         patch("bot.market_scheduler.get_market_status", new_callable=AsyncMock, return_value=mock_status), \
+         patch("bot.alpaca_trading_client.get_all_positions", new_callable=AsyncMock, return_value=[]), \
+         patch("bot.alpaca_trading_client.get_open_orders", new_callable=AsyncMock, return_value=[]), \
+         patch("bot.market_data_client.get_historical_bars", new_callable=AsyncMock, return_value=overnight_df), \
+         patch("bot.swing_strategy.evaluate", return_value=TradingSignal(symbol="NVDA", signal_type=SignalType.HOLD, entry_price=140.0, stop_loss=0, take_profit=0, risk_reward_ratio=0, timeframe="1H")) as mock_strategy:
+
+        with patch.object(settings, "TARGET_SYMBOLS", "NVDA"):
+            await bot._run_regular_hours_pipeline()
+            # Strategy SHOULD be called because overnight bar is within opening tolerance
+            assert mock_strategy.called

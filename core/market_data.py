@@ -56,15 +56,25 @@ class MarketDataClient:
         if end is None:
             end = now_utc()
         if start is None:
-            # Look back sufficiently far to guarantee minimum bars
-            start = end - timedelta(days=max(limit * 3, 30))
+            # Look back sufficiently far to guarantee minimum bars ending at 'end'
+            # Day bars: ~1.8 calendar days per trading day
+            # Hour bars: ~7 hourly bars per trading day -> ~0.3 calendar days per bar
+            is_day = (hasattr(timeframe, "unit") and timeframe.unit == TimeFrameUnit.Day) or str(timeframe) == "1Day"
+            if is_day:
+                lookback_days = max(int(limit * 2.0), 60)
+            else:
+                lookback_days = max(int(limit / 3.0), 35)
+            start = end - timedelta(days=lookback_days)
 
+        # Do NOT pass limit to Alpaca request when start is specified.
+        # Alpaca sorts ASCENDING (oldest-first) by default. Passing limit with a past start
+        # causes Alpaca to return the oldest `limit` bars starting at `start`, rather than
+        # the most recent bars ending at `end`. We trim with .tail(limit) after sorting.
         request = StockBarsRequest(
             symbol_or_symbols=symbol.upper(),
             timeframe=timeframe,
             start=start,
             end=end,
-            limit=limit,
             feed=settings.ALPACA_DATA_FEED,
         )
 
@@ -94,6 +104,10 @@ class MarketDataClient:
         df = pd.DataFrame(rows)
         df.set_index("timestamp", inplace=True)
         df.sort_index(inplace=True)
+
+        if limit and len(df) > limit:
+            df = df.tail(limit)
+
         return df
 
     async def get_latest_quote(self, symbol: str) -> Dict[str, float]:

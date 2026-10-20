@@ -52,7 +52,9 @@ from notifications import dispatcher
 from utils.timezone import now_utc, format_multi_tz_display
 
 # Maximum acceptable data age (seconds) before considering it stale
-DATA_STALENESS_THRESHOLD_SEC = 600  # 10 minutes
+# For 1-Hour bars: each bar takes 60 minutes to form, so mid-session threshold is 2.5 hours.
+DATA_STALENESS_THRESHOLD_SEC = 9000  # 2.5 hours (for 1H bars mid-session)
+DATA_STALENESS_SESSION_OPEN_TOLERANCE_SEC = 345600  # 4 days (for session open / weekend close)
 
 logger = structlog.get_logger("bot")
 
@@ -388,13 +390,28 @@ class TradingBot:
         if not df_1h.empty:
             last_bar_time = df_1h.index[-1]
             staleness_sec = (now_utc() - last_bar_time).total_seconds()
-            if staleness_sec > DATA_STALENESS_THRESHOLD_SEC:
+
+            # During the first 75 minutes of the trading session (regular hours),
+            # the latest completed 1H bar is from previous session close or weekend.
+            market_status = await market_scheduler.get_market_status()
+            is_early_session = (
+                market_status.phase == MarketPhase.REGULAR_HOURS
+                and market_status.time_to_close_seconds > (5.25 * 3600)
+            )
+            effective_threshold = (
+                DATA_STALENESS_SESSION_OPEN_TOLERANCE_SEC
+                if is_early_session
+                else DATA_STALENESS_THRESHOLD_SEC
+            )
+
+            if staleness_sec > effective_threshold:
                 logger.warning(
                     "Data staleness detected — skipping signal generation",
                     symbol=symbol,
                     staleness_sec=round(staleness_sec, 1),
-                    threshold_sec=DATA_STALENESS_THRESHOLD_SEC,
+                    threshold_sec=effective_threshold,
                     last_bar=str(last_bar_time),
+                    is_early_session=is_early_session,
                 )
                 return
 
